@@ -52,7 +52,7 @@ typedef UINT32     UINTPTR;
 #define IN
 #define OUT
 
-#define  NULL 0
+// #define  NULL 0
 #define  NULL_PTR 0L
 #define  NULL_BYTE 0XFF
 #define  NULL_WORD 0xFFFF
