@@ -1274,7 +1274,9 @@ void usage_exit(char * binname)
         exit(-1);
 }
 
-
+#define CMD_BUFFERSIZE 4096
+#define PATH_BUFFERSIZE 1024
+#define FILENAME_BUFFERSIZE 512
 extern UINT32 g_ucurLogLevel ;
 int main(int argc, char *argv[])
 {
@@ -1359,20 +1361,19 @@ int main(int argc, char *argv[])
         symelang = ELF_E_LANG_GO;
     }
     
+    char cmd[CMD_BUFFERSIZE] = {0};
 
-    char cmd[1024] = {0};
-
-    char dllpath[512] = {0};
-    char dllfullname[1024] = {0};
-    char tmpdllfullname[1024] = {0};
-    char pat_symbol_file[1024] = {0};
+    char dllpath[FILENAME_BUFFERSIZE] = {0};
+    char dllfullname[PATH_BUFFERSIZE] = {0};
+    char tmpdllfullname[PATH_BUFFERSIZE] = {0};
+    char pat_symbol_file[PATH_BUFFERSIZE] = {0};
 
     char * dllname = "qpatch.so";
     char * tmpdllname = "_qpatch.so";
 
 
-    getcwd(dllpath, 512); 
-    dllpath[512-1] = '\0';
+    getcwd(dllpath, FILENAME_BUFFERSIZE); 
+    dllpath[FILENAME_BUFFERSIZE-1] = '\0';
     sprintf(tmpdllfullname, "%s/%s", dllpath, tmpdllname);
      
     if (dllnamepa != NULL && strlen(dllnamepa) > 0 ) {
@@ -1381,19 +1382,19 @@ int main(int argc, char *argv[])
         sprintf(dllfullname, "%s/%s", dllpath, dllname);
     }
 
-    memset(pat_symbol_file, 0, 1024);
+    memset(pat_symbol_file, 0, PATH_BUFFERSIZE);
     if ((pat_symbol != NULL) && (strlen(pat_symbol) > 0)) {
          sprintf(pat_symbol_file, "%s/%s", dllpath, pat_symbol);
     }
-    memset(cmd, 0, 1024);
+    memset(cmd, 0, CMD_BUFFERSIZE);
     sprintf(cmd, "rm %s >/dev/null 2>&1", tmpdllfullname);
     system(cmd);
     
-    memset(cmd, 0, 1024);
+    memset(cmd, 0, CMD_BUFFERSIZE);
     sprintf(cmd, "cp %s %s", dllfullname, tmpdllfullname);
     system(cmd);
 
-    memset(cmd, 0, 1024);
+    memset(cmd, 0, CMD_BUFFERSIZE);
     sprintf(cmd, "chmod 755 %s",  tmpdllfullname);
     system(cmd);
 
@@ -1407,7 +1408,7 @@ int main(int argc, char *argv[])
         rc = qpatch_dsp_patch((pid_t)pid, objname, tmpdllfullname, symelang);
     }
 
-    memset(cmd, 0, 1024);
+    memset(cmd, 0, CMD_BUFFERSIZE);
     sprintf(cmd, "rm %s", tmpdllfullname);
     system(cmd);
 
