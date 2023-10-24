@@ -6,11 +6,11 @@
 3. Support patch initialization function (convenient for unit testing).
 
 #### Compilation and usage method:
-Delete the "distorm64-v1.7.30" file and create a directory with the same name "distorm64-v1.7.30".
-Download the code from https://github.com/hanchaoqun/distorm64 to the "distorm64-v1.7.30" directory.
-Run build.sh to compile.
-Two files, qpatch.bin and qpatch.so, are generated.
-See the usage instructions of qpatch.bin for details.
+1. Delete the "distorm64-v1.7.30" file and create a directory with the same name "distorm64-v1.7.30".
+2. Download the code from https://github.com/hanchaoqun/distorm64 to the "distorm64-v1.7.30" directory.
+3. Run build.sh to compile.
+4. Two files, qpatch.bin and qpatch.so, are generated.
+5. See the usage instructions of qpatch.bin for details.
 
 
 ## 对LINUX下的用户态进程进行热补丁。
@@ -21,8 +21,8 @@ See the usage instructions of qpatch.bin for details.
 3. 支持补丁初始化函数（方便进行单元测试）。
 
 #### 编译及使用方法：
-1、将“distorm64-v1.7.30”文件删除，并创建同名目录"distorm64-v1.7.30"。
-2、下载https://github.com/hanchaoqun/distorm64代码到"distorm64-v1.7.30"目录。
-3、运行build.sh进行编译。
-4、生成两个文件qpatch.bin和qpatch.so。
-5、使用方法详见qpatch.bin的使用说明。
+1. 将“distorm64-v1.7.30”文件删除，并创建同名目录"distorm64-v1.7.30"。
+2. 下载https://github.com/hanchaoqun/distorm64代码到"distorm64-v1.7.30"目录。
+3. 运行build.sh进行编译。
+4. 生成两个文件qpatch.bin和qpatch.so。
+5. 使用方法详见qpatch.bin的使用说明。
