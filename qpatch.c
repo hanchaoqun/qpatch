@@ -975,19 +975,17 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname, int sy
             jmp [rdi]              ; ff 27                - base pointer
             jmp [rdi +4*rsi + a]   ; ff a4 b7 00 00 00 00 - base pointer +4*index + displacement
 
-            �������ַ������ƻ�RAX�Ĵ���
+            
 			MOV RAX, 0x0           ; 48 b8 00 00 00 00 00 00 00 00
 			JMP RAX                ; ff e0
-			//////////
+
             const char *g_pMac = "\x48\xb8\x0\x0\x0\x0\x0\x0\x0\x0\xff\xe0";
             const int N_OFFSET         = 2; 
             memcpy(jumpcode, g_pMac, LNK_MAX_CODE_BAK_LEN);
             LOG(LOG_ERR, "repf newaddr:%p,osdaddr:%p",repf->newaddr,repf->oldaddr);
             memcpy(&jumpcode[N_OFFSET], &repf->newaddr, sizeof(long));
-            //////////
             */
             
-            //�������ַ������ƻ��κμĴ�����Ӧ�������ȶ���
             //jmp [rel a]            ; ff 25 e7 ff ff ff    - RIP + 32-bit displacement  == jmp *[rip+0]
             const char *g_pMac = "\xff\x25\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0\x0";
 			const int N_OFFSET = 6; 
@@ -1102,7 +1100,6 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname, int sy
     do{
         // ptrace_pid_inject_libc(pid, symelang, libcname, libcsize);
 
-        /*��ȡobj�ļ���С*/
         objsize = linkable_get_file_size(objname);
         if(!objsize){
             LOG(LOG_ERR, "Error to get objsize %s!", objname);
@@ -1185,7 +1182,7 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname, int sy
             rc = -1;
             break;
         }
-		pltgotptr = (void *)((size_t)qpatch_open_room_ret + (size_t)LNK_PLTGOT_BASE_OFFSET_IN_ROOM(objsize));
+	pltgotptr = (void *)((size_t)qpatch_open_room_ret + (size_t)LNK_PLTGOT_BASE_OFFSET_IN_ROOM(objsize));
         bssptr = (void *)((size_t)qpatch_open_room_ret + (size_t)LNK_BSS_BASE_OFFSET_IN_ROOM(objsize));
         baseptr = (void *)((size_t)qpatch_open_room_ret + (size_t)LNK_OBJ_BASE_OFFSET_IN_ROOM);
         base_rephdr_ptr = (void *)((size_t)qpatch_open_room_ret + (size_t)LNK_REPHDR_OFFSET_IN_ROOM);
