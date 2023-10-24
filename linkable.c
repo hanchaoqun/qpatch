@@ -1,4 +1,3 @@
-
 //===----------------------------------------------------------------------===//
 //
 // Copyright 2023 hanssccv@gmail.com. All rights reserved.
@@ -1382,7 +1381,7 @@ static Elf_Addr linkable_elf_pat_repable(const char * symbolname, const char * p
          return 0;
     }
 
-    while (VOS_NULL_PTR != fgets(symbol_para, 256, fp))
+    while (NULL_PTR != fgets(symbol_para, 256, fp))
     {   
         if (1 == type)
         {
@@ -1422,7 +1421,6 @@ static Elf_Addr linkable_elf_pat_repable(const char * symbolname, const char * p
 
         if(0==(strcmp(symbolname,pat_func_name)))
         {
-            /*��ȡ���ŵ�ַ*/
             memset(symbol_para,0,256);
             fgets(symbol_para, 256, fp);
             psubstr = strstr(symbol_para,":");
@@ -1431,7 +1429,6 @@ static Elf_Addr linkable_elf_pat_repable(const char * symbolname, const char * p
 
             if( 1 == fun_or_obj ) /*IS FUNC*/
             {
-	            /*��ȡ����size*/
 	            memset(symbol_para,0,256);
 	            fgets(symbol_para, 256, fp);
 
@@ -1447,7 +1444,7 @@ static Elf_Addr linkable_elf_pat_repable(const char * symbolname, const char * p
 			else
 			{
 				tptr = (Elf_Addr)strtol(pat_func_addr,NULL,16);
-				*outsymbolsize = 1; /*���ݣ����дһ���������*/
+				*outsymbolsize = 1; 
 			}
             
             LOG(LOG_DEBUG, "find patch func. name (%s), addr (%p), size (%u)", pat_func_name,tptr,*outsymbolsize);
