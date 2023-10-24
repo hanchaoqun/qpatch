@@ -5,7 +5,7 @@
 // license that can be found in the LICENSE file.
 //
 //===----------------------------------------------------------------------===//
-#include "dopra.h"
+#include "define.h"
 
 
 UINT32 g_ucurLogLevel = LOG_ERR;
