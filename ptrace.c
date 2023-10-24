@@ -245,8 +245,6 @@ int ptrace_pid_readarray(pid_t pid, uintptr_t target,
         return 0;
 }
 
-// wangwei/0115321 edit, 2015-8-20, ��ǰһ��д�ֳ�����������, 32λֻ��д4�ֽ��������������; 
-// 64λ������תָ����Ҫд12���ֽ����, �� size_t Ϊ 8 �ֽ�, ���¶�д��4���ֽ����ֵ; 
 int ptrace_pid_writezero(pid_t pid, uintptr_t target, size_t datasz)
 {
     int err = 0;
@@ -262,7 +260,6 @@ int ptrace_pid_writezero(pid_t pid, uintptr_t target, size_t datasz)
         return -1;
     }
     
-    // ��д�ֳ�����������
     int             idx         = 0;
     const size_t    word_size   = sizeof(size_t);
     size_t          pokedata    = 0;
@@ -274,7 +271,6 @@ int ptrace_pid_writezero(pid_t pid, uintptr_t target, size_t datasz)
         }
     }
 
-    // ʣ���������������Ҫд, ���ȶ�����һ���ֳ�����, Ȼ���滻ǰ�漸���ֽ�Ϊ��Ҫ�޸ĵ����ݺ���д��ȥ;
     int             spare_len   = datasz % word_size;
     //long            peekdata    = 0;
     if ( spare_len > 0 ) {
@@ -319,7 +315,6 @@ int ptrace_pid_writezero(pid_t pid, uintptr_t target, size_t datasz)
     return 0;
 }
 
-// wangwei/0115321 edit, 2015-8-20; �޸�����ͬ ptrace_pid_writezero
 int ptrace_pid_writearray(pid_t pid, uintptr_t target,
                           const unsigned char* data, size_t datasz)
 {
