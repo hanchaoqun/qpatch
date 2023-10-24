@@ -15,3 +15,10 @@ echo "make qpatch...ok"
 
 chmod 755 qpatch.bin
 chmod 755 qpatch.so
+
+#compile gotrace
+echo "make gotrace..."
+gcc -g ptrace.c symbol.c define.c linkable.c opcode.c hashmap.c/hashmap.c gotrace.c -Wall -Werror -o gotrace.bin -lstdc++ ./distorm64-v1.7.30/distorm64.a
+echo "make gotrace...ok"
+
+chmod 755 gotrace.bin
