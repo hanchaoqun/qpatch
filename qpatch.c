@@ -421,15 +421,15 @@ int qpatch_rol_patch(pid_t pid, const char *objname, const char *dllname, int sy
             if ((rc = ptrace_pid_wait(pp->hp->pid)) < 0)
                 break;
         }
-        if(mroom.rephdr._dopra_pat_callback_deactive_before){
-            LOG(LOG_INFO, "Call patchfun: void _dopra_pat_callback_deactive_before()...");
-                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._dopra_pat_callback_deactive_before, NULL)) < 0){
-                LOG(LOG_ERR, "Call patchfun: long _dopra_pat_callback_deactive_before()<%p>", 
-                    mroom.rephdr._dopra_pat_callback_deactive_before);
+        if(mroom.rephdr._pat_callback_deactive_before){
+            LOG(LOG_INFO, "Call patchfun: void _pat_callback_deactive_before()...");
+                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._pat_callback_deactive_before, NULL)) < 0){
+                LOG(LOG_ERR, "Call patchfun: long _pat_callback_deactive_before()<%p>", 
+                    mroom.rephdr._pat_callback_deactive_before);
                         break;
                 }
-            LOG(LOG_INFO, "Call patchfun: void _dopra_pat_callback_deactive_before()<%p> ok.", 
-                mroom.rephdr._dopra_pat_callback_deactive_before);
+            LOG(LOG_INFO, "Call patchfun: void _pat_callback_deactive_before()<%p> ok.", 
+                mroom.rephdr._pat_callback_deactive_before);
         }
 
         /* rep func begin */
@@ -573,15 +573,15 @@ int qpatch_rol_patch(pid_t pid, const char *objname, const char *dllname, int sy
             break;
         }
 
-        if(mroom.rephdr._dopra_pat_callback_deactive_after){
-            LOG(LOG_INFO, "Call patchfun: void _dopra_pat_callback_deactive_after()...");
-                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._dopra_pat_callback_deactive_after, NULL)) < 0){
-                LOG(LOG_ERR, "Call patchfun: long _dopra_pat_callback_deactive_after()<%p>", 
-                    mroom.rephdr._dopra_pat_callback_deactive_after);
+        if(mroom.rephdr._pat_callback_deactive_after){
+            LOG(LOG_INFO, "Call patchfun: void _pat_callback_deactive_after()...");
+                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._pat_callback_deactive_after, NULL)) < 0){
+                LOG(LOG_ERR, "Call patchfun: long _pat_callback_deactive_after()<%p>", 
+                    mroom.rephdr._pat_callback_deactive_after);
                         break;
                 }
-            LOG(LOG_INFO, "Call patchfun: void _dopra_pat_callback_deactive_after()<%p> ok.", 
-                mroom.rephdr._dopra_pat_callback_deactive_after);
+            LOG(LOG_INFO, "Call patchfun: void _pat_callback_deactive_after()<%p> ok.", 
+                mroom.rephdr._pat_callback_deactive_after);
         }
 
         /* clear room any way */
@@ -826,18 +826,18 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname, int sy
             if ((rc = ptrace_pid_wait(pp->hp->pid)) < 0)
                 break;
         }
-        if(mroom.rephdr._dopra_pat_callback_active_before){
-            LOG(LOG_INFO, "Call patchfun: long _dopra_pat_callback_active_before()...");
-                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._dopra_pat_callback_active_before, &patfuncallret)) < 0){
-                LOG(LOG_ERR, "Call patchfun: long _dopra_pat_callback_active_before()<%p> ret<%u>", 
-                    mroom.rephdr._dopra_pat_callback_active_before, patfuncallret);
+        if(mroom.rephdr._pat_callback_active_before){
+            LOG(LOG_INFO, "Call patchfun: long _pat_callback_active_before()...");
+                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._pat_callback_active_before, &patfuncallret)) < 0){
+                LOG(LOG_ERR, "Call patchfun: long _pat_callback_active_before()<%p> ret<%u>", 
+                    mroom.rephdr._pat_callback_active_before, patfuncallret);
                         break;
                 }
-            LOG(LOG_INFO, "Call patchfun: long _dopra_pat_callback_active_before()<%p> ret<%u>", 
-                mroom.rephdr._dopra_pat_callback_active_before, patfuncallret);
-            if(VOS_OK != patfuncallret){
+            LOG(LOG_INFO, "Call patchfun: long _pat_callback_active_before()<%p> ret<%u>", 
+                mroom.rephdr._pat_callback_active_before, patfuncallret);
+            if(OK != patfuncallret){
                 rc = -1;
-                LOG(LOG_ERR, "_dopra_pat_callback_active_before ret<%u> != VOS_OK<%u>", patfuncallret, VOS_OK);
+                LOG(LOG_ERR, "_pat_callback_active_before ret<%u> != OK<%u>", patfuncallret, OK);
                 break;
             }
         }
@@ -1027,15 +1027,15 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname, int sy
             }
         }
         
-        if(mroom.rephdr._dopra_pat_callback_active_after){
-            LOG(LOG_INFO, "Call patchfun: void _dopra_pat_callback_active_after()...");
-                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._dopra_pat_callback_active_after, NULL)) < 0){
-                LOG(LOG_ERR, "Call patchfun: long _dopra_pat_callback_active_after()<%p>", 
-                    mroom.rephdr._dopra_pat_callback_active_after);
+        if(mroom.rephdr._pat_callback_active_after){
+            LOG(LOG_INFO, "Call patchfun: void _pat_callback_active_after()...");
+                if ((rc = ptrace_pid_call_func_noparam(pp->hp->pid, mroom.rephdr._pat_callback_active_after, NULL)) < 0){
+                LOG(LOG_ERR, "Call patchfun: long _pat_callback_active_after()<%p>", 
+                    mroom.rephdr._pat_callback_active_after);
                         break;
                 }
-            LOG(LOG_INFO, "Call patchfun: void _dopra_pat_callback_active_after()<%p> ok.", 
-                mroom.rephdr._dopra_pat_callback_active_after);
+            LOG(LOG_INFO, "Call patchfun: void _pat_callback_active_after()<%p> ok.", 
+                mroom.rephdr._pat_callback_active_after);
         }
 
         LOG(LOG_DEBUG, "Detaching from PID %d.", pp->hp->pid);
@@ -1262,14 +1262,14 @@ void usage_exit(char * binname)
         printf("          -r           rollback patch\n");
         printf("          -q           query patch status\n");
         printf("       [OPTION] : \n" );
-        printf("          -s <file>    dopra patch symbol file name\n");
+        printf("          -s <file>    patch symbol file name\n");
         printf("          -d <level>   debug level [ 1: debug 2: info ]\n");
         printf("          -e <lang>    process file language [ 'c' , 'go' ]\n");
         exit(-1);
 }
 
 
-extern VOS_UINT32 g_ucurLogLevel ;
+extern UINT32 g_ucurLogLevel ;
 int main(int argc, char *argv[])
 {
     int rc = -1;
