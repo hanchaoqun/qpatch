@@ -8,7 +8,7 @@
 #ifndef __HPATCH_OPCODE_H__
 #define __HPATCH_OPCODE_H__
 
-#include "dopra.h"
+#include "define.h"
 
 
 extern unsigned long get_opcode_size_64(unsigned char* startaddress);
