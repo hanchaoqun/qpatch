@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "opcode.h"
-#include "distorm.h"
+#include "distorm64-v1.7.30/distorm.h"
 
 #define DECODE_TYPE Decode64Bits
 
