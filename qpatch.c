@@ -1,4 +1,10 @@
-/* hanchaoqun 2013-03-06 */
+//===----------------------------------------------------------------------===//
+//
+// Copyright 2023 hanssccv@gmail.com. All rights reserved.
+// Use of this source code is governed by a Anti-996 style
+// license that can be found in the LICENSE file.
+//
+//===----------------------------------------------------------------------===//
 #include <unistd.h>
 #include "qpatch.h"
 
