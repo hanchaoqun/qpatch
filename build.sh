@@ -9,7 +9,7 @@ cd $PWDIR
 
 #compile qpatch
 echo "make qpatch..."
-gcc -g ptrace.c symbol.c dopra.c linkable.c opcode.c qpatch.c -Wall -Werror -o qpatch.bin ./distorm64-v1.7.30/distorm64.a
+gcc -g ptrace.c symbol.c define.c linkable.c opcode.c qpatch.c -Wall -Werror -o qpatch.bin ./distorm64-v1.7.30/distorm64.a
 gcc libqpatch.c -fPIC -shared -o qpatch.so
 echo "make qpatch...ok"
 
