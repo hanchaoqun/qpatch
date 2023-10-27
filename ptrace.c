@@ -1120,6 +1120,7 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll, const char 
     uintptr_t result = 0;
     uintptr_t stack[4] = { 0, 0, 0, 0}; /* max arguments of the functions we are using */
     uintptr_t heapptr = 0;
+    uintptr_t heapptr_need_free     = 0;
     struct hlink_map dll_link_map; /* Force loading the .so file into memory (sometime it does not auto load) */
     unsigned char dll_link_map_len = sizeof(struct hlink_map);
     char dll_link_map_file[256] = {0};
@@ -1193,13 +1194,30 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll, const char 
             break;
         }
         LOG(LOG_DEBUG, "Copy stack out ok.");
-        PTRACE_ASM_MEMCPY2STACK(pp->hp->pid, iregs, dll, strlen(dll) + 1, heapptr, rc);
-        PTRACE_CHECK_RC_AND_BREAK(rc,"MEMCPY2STACK");
+        /* Call malloc */
+        LOG(LOG_DEBUG, "Start call function [malloc]...");
+        PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
+        PTRACE_CHECK_RC_AND_BREAK(rc,"SET_BREAKPOINT");
+        PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs, pp->hp->fn_malloc, tgtsz, 0, rc);
+        PTRACE_CHECK_RC_AND_BREAK(rc,"PASS_ARGS2FUNC");
+        PTRACE_ASM_SET_REGS(pp->hp->pid, "malloc", iregs, rc);
+        PTRACE_ASM_CALL_FUNC(pp->hp->pid, "malloc", iregs, rc);
+        PTRACE_CHECK_RC_AND_BREAK(rc,"CALL_FUNC [malloc]");
+        result  = PTRACE_REG_AX(iregs);
+        heapptr = PTRACE_REG_AX(iregs); /* keep a copy of this pointer */
+        PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
+        LOG(LOG_DEBUG, "End call function [malloc] result.");
         /* Copy data to the malloced area */
         LOG(LOG_DEBUG, "Copying %u bytes to %p.", tgtsz, heapptr);
         if (!heapptr)
         {
             LOG(LOG_ERR, "Malloced area point is %p.", heapptr);
+            break;
+        }
+        heapptr_need_free = heapptr;
+        if ((rc = ptrace_pid_writearray(pp->hp->pid, heapptr, mdata, tgtsz)) < 0)
+        {
+            LOG(LOG_ERR, "Copy mdata error %s.", strerror(errno));
             break;
         }
         /* Call dlopen */
@@ -1280,6 +1298,23 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll, const char 
     } while (0);
 
     do{
+        /* free memory */
+        if(heapptr_need_free){
+            LOG(LOG_DEBUG, "free heapptr_need_free<%p>...", heapptr_need_free);
+                /* Call free */
+            LOG(LOG_DEBUG, "Start call function [free]...");
+            PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
+            PTRACE_CHECK_RC_AND_BREAK(rc,"SET_BREAKPOINT");
+            PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs, pp->hp->fn_free, heapptr_need_free, 0, rc);
+            PTRACE_CHECK_RC_AND_BREAK(rc,"PASS_ARGS2FUNC");
+            PTRACE_ASM_SET_REGS(pp->hp->pid, "free", iregs, rc);
+            PTRACE_ASM_CALL_FUNC(pp->hp->pid, "free", iregs, rc);
+            PTRACE_CHECK_RC_AND_BREAK(rc,"CALL_FUNC [free]");
+            PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
+            LOG(LOG_DEBUG, "End call function [free].");
+            heapptr_need_free = 0;
+            LOG(LOG_DEBUG, "free heapptr_need_free ok.");
+        }
         /* Original reset */
         LOG(LOG_DEBUG, "Setting original registers...");
         if ((rc = ptrace_pid_setregs(pp->hp->pid, &oregs)) < 0) {
