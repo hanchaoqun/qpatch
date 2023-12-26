@@ -62,7 +62,7 @@
    ...
    ```
 ##### Use Case 2: Hook functions in the running progress
-0. What if I don’t want to destroy sleep’s functionality and add some capabilities to it, such as the ability to print logs?
+0. ***What if I don’t want to destroy sleep’s functionality and add some capabilities to it, such as the ability to print logs?***
 1. Let's build on the previous cmain example  (You can choose any other process as a target):
    ````c
     #include <stdio.h>
