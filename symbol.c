@@ -1596,7 +1596,7 @@ static int symbol_ld_find_default_func(struct symbol_elf_pid* hp)
         if (outfn != 0) { \
             LOG(LOG_DEBUG, "Found %s at %p in %s",  fn, outfn, index); \
         } else { \
-            LOG(LOG_ERR, "%s not found in %s.", fn, index); \
+            LOG(LOG_DEBUG, "%s not found in %s.", fn, index); \
         } \
     } while (0)
 
