@@ -53,7 +53,11 @@
     c test
     sleep called!
    ```
-9. Run the command `./qpatch.bin -o ./cpatch.o -p `pidof cmain` -r`, to rollback the patch, the print come back to:
+9. Run the command
+   ```
+   ./qpatch.bin -o ./cpatch.o -p `pidof cmain` -r
+   ```
+   which rollback the patch, the print come back to:
    ```
    test
    test
@@ -119,7 +123,11 @@
    after sleep called!
    c test
    ```
-9. Run the command `./qpatch.bin -o ./chook.o -p `pidof cmain` -r`, to rollback the patch, the print come back to:
+9. Run the command
+   ```
+   ./qpatch.bin -o ./chook.o -p `pidof cmain` -r
+   ```
+   which rollback the patch, the print come back to:
    ```
    test
    test
