@@ -109,9 +109,15 @@
    ```
 8. Then go back to check the terminal which running the `cmain`, you will see it keep printing:
    ```
-    after sleep called!
-    c test
-    before sleep called!
+   before sleep called!
+   after sleep called!
+   c test
+   before sleep called!
+   after sleep called!
+   c test
+   before sleep called!
+   after sleep called!
+   c test
    ```
 9. Run the command `./qpatch.bin -o ./chook.o -p `pidof cmain` -r`, to rollback the patch, the print come back to:
    ```
