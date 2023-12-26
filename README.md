@@ -104,8 +104,8 @@
    ```
 7. Load & Active this `cpatch.o` into `cmain` via run the following 2 commands:
    ```
-   ./qpatch.bin -o ./cpatch.o -p `pidof cmain` -l
-   ./qpatch.bin -o ./cpatch.o -p `pidof cmain` -a
+   ./qpatch.bin -o ./chook.o -p `pidof cmain` -l
+   ./qpatch.bin -o ./chook.o -p `pidof cmain` -a
    ```
 8. Then go back to check the terminal which running the `cmain`, you will see it keep printing:
    ```
@@ -113,7 +113,7 @@
     c test
     before sleep called!
    ```
-9. Run the command `./qpatch.bin -o ./cpatch.o -p `pidof cmain` -r`, to rollback the patch, the print come back to:
+9. Run the command `./qpatch.bin -o ./chook.o -p `pidof cmain` -r`, to rollback the patch, the print come back to:
    ```
    test
    test
