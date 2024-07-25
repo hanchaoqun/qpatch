@@ -10,11 +10,8 @@
 
 #include "define.h"
 
-
 extern unsigned long get_opcode_size_64(unsigned char* startaddress);
 
 #define get_opcode_size(a) get_opcode_size_64((a))
 
-
 #endif /* __HPATCH_OPCODE_H__ */
-
