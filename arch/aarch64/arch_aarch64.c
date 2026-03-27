@@ -6,12 +6,33 @@
 //
 //===----------------------------------------------------------------------===//
 #include <errno.h>
+#include <string.h>
+#include <sys/ptrace.h>
+#include <sys/uio.h>
+#include <sys/wait.h>
 
 #include "arch_aarch64.h"
+
+#if defined(__aarch64__)
+#include <asm/ptrace.h>
+#include <elf.h>
+#endif
 
 static const char *qpatch_arch_aarch64_reg_ip_name(void) {
   return "PC";
 }
+
+#if defined(__aarch64__)
+static int qpatch_arch_aarch64_getregs(pid_t pid, struct user_pt_regs *regs) {
+  struct iovec iov = {.iov_base = regs, .iov_len = sizeof(*regs)};
+  return ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov);
+}
+
+static int qpatch_arch_aarch64_setregs(pid_t pid, struct user_pt_regs *regs) {
+  struct iovec iov = {.iov_base = regs, .iov_len = sizeof(*regs)};
+  return ptrace(PTRACE_SETREGSET, pid, (void *)NT_PRSTATUS, &iov);
+}
+#endif
 
 static uintptr_t qpatch_arch_aarch64_reg_get_zero(const struct user *regs) {
   (void)regs;
@@ -32,6 +53,47 @@ static int qpatch_arch_aarch64_call_func(pid_t pid, const char *fn_name,
                                          struct user *iregs, uintptr_t fn,
                                          uintptr_t arg1, uintptr_t arg2,
                                          uintptr_t *out_ret) {
+#if defined(__aarch64__)
+  int status = 0;
+  struct user_pt_regs regs;
+  (void)fn_name;
+  if (!fn) {
+    errno = EINVAL;
+    return -1;
+  }
+  memset(&regs, 0, sizeof(regs));
+  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
+    return -1;
+  }
+
+  regs.sp = (regs.sp - 16) & (~0xFUL);
+  if (ptrace(PTRACE_POKEDATA, pid, (void *)regs.sp, (void *)0UL) < 0) {
+    return -1;
+  }
+  regs.regs[0] = arg1;
+  regs.regs[1] = arg2;
+  regs.regs[30] = 0; /* LR */
+  regs.pc = fn;
+  if (qpatch_arch_aarch64_setregs(pid, &regs) < 0) {
+    return -1;
+  }
+  if (ptrace(PTRACE_CONT, pid, NULL, NULL) < 0) {
+    return -1;
+  }
+  if (waitpid(pid, &status, 0) < 0) {
+    return -1;
+  }
+  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
+    return -1;
+  }
+  if (out_ret) {
+    *out_ret = regs.regs[0];
+  }
+  if (iregs) {
+    memset(iregs, 0, sizeof(*iregs));
+  }
+  return 0;
+#else
   (void)pid;
   (void)fn_name;
   (void)iregs;
@@ -42,12 +104,54 @@ static int qpatch_arch_aarch64_call_func(pid_t pid, const char *fn_name,
     *out_ret = 0;
   }
   return qpatch_arch_aarch64_not_implemented();
+#endif
 }
 
 static int qpatch_arch_aarch64_run_syscall6(
     pid_t pid, const char *sys_name, struct user *iregs, uintptr_t syscallno,
     uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
     uintptr_t arg5, uintptr_t arg6, uintptr_t *out_ret) {
+#if defined(__aarch64__)
+  int status = 0;
+  struct user_pt_regs regs;
+  (void)sys_name;
+  memset(&regs, 0, sizeof(regs));
+  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
+    return -1;
+  }
+  regs.regs[8] = syscallno;
+  regs.regs[0] = arg1;
+  regs.regs[1] = arg2;
+  regs.regs[2] = arg3;
+  regs.regs[3] = arg4;
+  regs.regs[4] = arg5;
+  regs.regs[5] = arg6;
+  if (qpatch_arch_aarch64_setregs(pid, &regs) < 0) {
+    return -1;
+  }
+  if (ptrace(PTRACE_SYSCALL, pid, NULL, NULL) < 0) {
+    return -1;
+  }
+  if (waitpid(pid, &status, 0) < 0) {
+    return -1;
+  }
+  if (ptrace(PTRACE_SYSCALL, pid, NULL, NULL) < 0) {
+    return -1;
+  }
+  if (waitpid(pid, &status, 0) < 0) {
+    return -1;
+  }
+  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
+    return -1;
+  }
+  if (out_ret) {
+    *out_ret = regs.regs[0];
+  }
+  if (iregs) {
+    memset(iregs, 0, sizeof(*iregs));
+  }
+  return 0;
+#else
   (void)pid;
   (void)sys_name;
   (void)iregs;
@@ -62,12 +166,22 @@ static int qpatch_arch_aarch64_run_syscall6(
     *out_ret = 0;
   }
   return qpatch_arch_aarch64_not_implemented();
+#endif
 }
 
 static int qpatch_arch_aarch64_run_syscall7(
     pid_t pid, const char *sys_name, struct user *iregs, uintptr_t syscallno,
     uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
     uintptr_t arg5, uintptr_t arg6, uintptr_t arg7, uintptr_t *out_ret) {
+#if defined(__aarch64__)
+  if (arg7 != 0) {
+    errno = EINVAL;
+    return -1;
+  }
+  return qpatch_arch_aarch64_run_syscall6(pid, sys_name, iregs, syscallno, arg1,
+                                          arg2, arg3, arg4, arg5, arg6,
+                                          out_ret);
+#else
   (void)pid;
   (void)sys_name;
   (void)iregs;
@@ -83,6 +197,7 @@ static int qpatch_arch_aarch64_run_syscall7(
     *out_ret = 0;
   }
   return qpatch_arch_aarch64_not_implemented();
+#endif
 }
 
 const struct qpatch_arch_ops *qpatch_arch_aarch64_get(void) {
