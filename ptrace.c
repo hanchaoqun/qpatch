@@ -9,6 +9,63 @@
 
 int ptrace_pp_detach(struct ptrace_pid *pp);
 
+static const char *ptrace_pp_reg_ip_name(const struct ptrace_pid *pp) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_ip_name) {
+    return pp->arch_ops->reg_ip_name();
+  }
+  return "IP";
+}
+
+static uintptr_t ptrace_pp_reg_get_ip(const struct ptrace_pid *pp,
+                                      const struct user *regs) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_get_ip) {
+    return pp->arch_ops->reg_get_ip(regs);
+  }
+#if defined(__x86_64__)
+  return regs ? regs->regs.rip : 0;
+#elif defined(__i386__)
+  return regs ? regs->regs.eip : 0;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
+static uintptr_t ptrace_pp_reg_get_sp(const struct ptrace_pid *pp,
+                                      const struct user *regs) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_get_sp) {
+    return pp->arch_ops->reg_get_sp(regs);
+  }
+#if defined(__x86_64__)
+  return regs ? regs->regs.rsp : 0;
+#elif defined(__i386__)
+  return regs ? regs->regs.esp : 0;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
+static void ptrace_pp_reg_set_ip(const struct ptrace_pid *pp, struct user *regs,
+                                 uintptr_t ip) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_set_ip) {
+    pp->arch_ops->reg_set_ip(regs, ip);
+    return;
+  }
+#if defined(__x86_64__)
+  if (regs) {
+    regs->regs.rip = ip;
+  }
+#elif defined(__i386__)
+  if (regs) {
+    regs->regs.eip = ip;
+  }
+#else
+  (void)regs;
+  (void)ip;
+#endif
+}
+
 int ptrace_traceme() {
   if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) < 0) {
     int err = errno;
@@ -614,20 +671,13 @@ int ptrace_pp_set_eip(struct ptrace_pid *pp, uintptr_t ptr) {
       int err = errno;
       LOG(LOG_ERR, "Ptrace getregs failed with error %s", strerror(err));
     } else {
-      const char *ip_name = PTRACE_REG_IP_NAME;
-      uintptr_t old_ip = PTRACE_REG_IP(regs);
-      if (pp->arch_ops && pp->arch_ops->reg_ip_name &&
-          pp->arch_ops->reg_get_ip) {
-        ip_name = pp->arch_ops->reg_ip_name();
-        old_ip = pp->arch_ops->reg_get_ip(&regs);
-      }
+      const char *ip_name = ptrace_pp_reg_ip_name(pp);
+      uintptr_t old_ip = ptrace_pp_reg_get_ip(pp, &regs);
+      uintptr_t old_sp = ptrace_pp_reg_get_sp(pp, &regs);
       LOG(LOG_ERR, "%s is %p", ip_name, (void *)old_ip);
+      LOG(LOG_DEBUG, "SP is %p", (void *)old_sp);
       if (ptr == pp->hp->exe_entry_point) ptr += sizeof(void *);
-      if (pp->arch_ops && pp->arch_ops->reg_set_ip) {
-        pp->arch_ops->reg_set_ip(&regs, ptr);
-      } else {
-        PTRACE_REG_IP(regs) = ptr;
-      }
+      ptrace_pp_reg_set_ip(pp, &regs, ptr);
       if (ptrace(PTRACE_SETREGS, pp->hp->pid, NULL, &regs) < 0) {
         int err = errno;
         LOG(LOG_ERR, "Ptrace setregs failed with error %s", strerror(err));
