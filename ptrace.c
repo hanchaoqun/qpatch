@@ -104,6 +104,34 @@ static int ptrace_arch_reg_set_sp(const struct qpatch_arch_ops *arch_ops,
   return -1;
 }
 
+static int ptrace_align_size(size_t value, size_t alignment, int force_next,
+                             size_t *out) {
+  size_t aligned_input = value;
+  size_t alignment_bias = 0;
+  size_t aligned_value = 0;
+
+  if (!out || alignment == 0) {
+    return -1;
+  }
+
+  if (force_next) {
+    if (aligned_input == SIZE_MAX) {
+      return -1;
+    }
+    aligned_input += 1;
+  }
+
+  alignment_bias = alignment - 1;
+  if (aligned_input > SIZE_MAX - alignment_bias) {
+    return -1;
+  }
+
+  aligned_value =
+      ((aligned_input + alignment_bias) / alignment) * alignment;
+  *out = aligned_value;
+  return 0;
+}
+
 static int ptrace_arch_memcpy2stack(pid_t pid,
                                     const struct qpatch_arch_ops *arch_ops,
                                     struct user *iregs, const void *mem,
@@ -117,8 +145,9 @@ static int ptrace_arch_memcpy2stack(pid_t pid,
   if (arch_ops && arch_ops->stack_alignment) {
     stack_alignment = arch_ops->stack_alignment;
   }
-  alloc_size = ((memsize + stack_alignment - 1) / stack_alignment) *
-               stack_alignment;
+  if (ptrace_align_size(memsize, stack_alignment, 0, &alloc_size) < 0) {
+    return -1;
+  }
   sp = ptrace_arch_reg_get_sp(arch_ops, iregs);
   sp = sp - alloc_size;
   if (ptrace_arch_reg_set_sp(arch_ops, iregs, sp) < 0) {
@@ -1137,7 +1166,13 @@ int ptrace_pid_inject_libc(pid_t pid, int elang, const char *libcname,
   }
 
   do {
-    inj_libcsize = (libcsize & 0xFFFFFFF0) + 0x10;
+    if (ptrace_align_size(libcsize, 16, 1, &inj_libcsize) < 0) {
+      LOG(LOG_ERR,
+          "libcsize (%zu) overflow while aligning to next 16-byte boundary.",
+          libcsize);
+      rc = -1;
+      break;
+    }
 
     /* Prepare the child for injection */
     LOG(LOG_DEBUG, "Attaching to PID %d", pid);
