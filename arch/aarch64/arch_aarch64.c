@@ -34,14 +34,64 @@ static int qpatch_arch_aarch64_setregs(pid_t pid, struct user_pt_regs *regs) {
 }
 #endif
 
-static uintptr_t qpatch_arch_aarch64_reg_get_zero(const struct user *regs) {
+static uintptr_t qpatch_arch_aarch64_reg_get_ip(const struct user *regs) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return 0;
+  }
+  return regs->regs.pc;
+#else
   (void)regs;
   return 0;
+#endif
 }
 
-static void qpatch_arch_aarch64_reg_set_noop(struct user *regs, uintptr_t v) {
+static void qpatch_arch_aarch64_reg_set_ip(struct user *regs, uintptr_t ip) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return;
+  }
+  regs->regs.pc = ip;
+#else
   (void)regs;
-  (void)v;
+  (void)ip;
+#endif
+}
+
+static uintptr_t qpatch_arch_aarch64_reg_get_sp(const struct user *regs) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return 0;
+  }
+  return regs->regs.sp;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
+static void qpatch_arch_aarch64_reg_set_sp(struct user *regs, uintptr_t sp) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return;
+  }
+  regs->regs.sp = sp;
+#else
+  (void)regs;
+  (void)sp;
+#endif
+}
+
+static uintptr_t qpatch_arch_aarch64_reg_get_ret(const struct user *regs) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return 0;
+  }
+  return regs->regs.regs[0];
+#else
+  (void)regs;
+  return 0;
+#endif
 }
 
 static int qpatch_arch_aarch64_not_implemented(void) {
@@ -203,14 +253,14 @@ static int qpatch_arch_aarch64_run_syscall7(
 const struct qpatch_arch_ops *qpatch_arch_aarch64_get(void) {
   static const struct qpatch_arch_ops k_ops = {
       .cpu = QPATCH_ARCH_CPU_AARCH64,
-      .name = "aarch64(todo)",
+      .name = "aarch64",
       .elf_bit = ELF_IS_64BIT,
       .reg_ip_name = qpatch_arch_aarch64_reg_ip_name,
-      .reg_get_ip = qpatch_arch_aarch64_reg_get_zero,
-      .reg_set_ip = qpatch_arch_aarch64_reg_set_noop,
-      .reg_get_sp = qpatch_arch_aarch64_reg_get_zero,
-      .reg_set_sp = qpatch_arch_aarch64_reg_set_noop,
-      .reg_get_ret = qpatch_arch_aarch64_reg_get_zero,
+      .reg_get_ip = qpatch_arch_aarch64_reg_get_ip,
+      .reg_set_ip = qpatch_arch_aarch64_reg_set_ip,
+      .reg_get_sp = qpatch_arch_aarch64_reg_get_sp,
+      .reg_set_sp = qpatch_arch_aarch64_reg_set_sp,
+      .reg_get_ret = qpatch_arch_aarch64_reg_get_ret,
       .call_func = qpatch_arch_aarch64_call_func,
       .run_syscall6 = qpatch_arch_aarch64_run_syscall6,
       .run_syscall7 = qpatch_arch_aarch64_run_syscall7,
