@@ -112,4 +112,60 @@ char* trimstr(char* str);
                   __FUNCTION__, ##args);                                       \
   }
 
+typedef enum qpatch_error_code {
+  QPATCH_ERR_OK = 0,
+  QPATCH_ERR_INVALID_PARAM = -1,
+  QPATCH_ERR_NOT_FOUND = -2,
+  QPATCH_ERR_ATTACH = -3,
+  QPATCH_ERR_INJECT = -4,
+  QPATCH_ERR_CALL = -5,
+  QPATCH_ERR_READ = -6,
+  QPATCH_ERR_WRITE = -7,
+  QPATCH_ERR_SYMBOL = -8,
+  QPATCH_ERR_STATE = -9,
+  QPATCH_ERR_IO = -10,
+  QPATCH_ERR_INTERNAL = -11,
+  QPATCH_ERR_ROLLBACK = -12
+} qpatch_error_code_t;
+
+static inline const char* qpatch_errstr(int code) {
+  switch (code) {
+    case QPATCH_ERR_OK:
+      return "OK";
+    case QPATCH_ERR_INVALID_PARAM:
+      return "INVALID_PARAM";
+    case QPATCH_ERR_NOT_FOUND:
+      return "NOT_FOUND";
+    case QPATCH_ERR_ATTACH:
+      return "ATTACH";
+    case QPATCH_ERR_INJECT:
+      return "INJECT";
+    case QPATCH_ERR_CALL:
+      return "CALL";
+    case QPATCH_ERR_READ:
+      return "READ";
+    case QPATCH_ERR_WRITE:
+      return "WRITE";
+    case QPATCH_ERR_SYMBOL:
+      return "SYMBOL";
+    case QPATCH_ERR_STATE:
+      return "STATE";
+    case QPATCH_ERR_IO:
+      return "IO";
+    case QPATCH_ERR_INTERNAL:
+      return "INTERNAL";
+    case QPATCH_ERR_ROLLBACK:
+      return "ROLLBACK";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+#define QPATCH_LOG_CTX(Level, action, pid, symbol, phase, errcode, fmt, args...) \
+  LOG(Level,                                                                        \
+      "[action=%s pid=%d symbol=%s phase=%s err=%d(%s)] " fmt,                     \
+      ((action) ? (action) : "unknown"), (int)(pid),                                \
+      ((symbol) ? (symbol) : "-"), ((phase) ? (phase) : "unknown"),                \
+      (int)(errcode), qpatch_errstr((int)(errcode)), ##args)
+
 #endif /* __HPATCH_DEFINE_H__ */

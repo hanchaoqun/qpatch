@@ -16,7 +16,8 @@ static int linkable_open_filename(const char *filename) {
   int fd = -1;
   fd = open(filename, O_RDONLY);
   if (fd < 0) {
-    LOG(LOG_ERR, "open file(%s) : %s", filename, strerror(errno));
+    QPATCH_LOG_CTX(LOG_ERR, "linkable", getpid(), filename, "open-file",
+                   QPATCH_ERR_IO, "open file failed: %s", strerror(errno));
   }
   return fd;
 }
@@ -49,8 +50,10 @@ static void *linkable_file_read_to_buf(const char *filename, size_t *outlen,
 
   filelen = linkable_get_file_size(filename);
   if (filelen <= 0) {
-    LOG(LOG_ERR, "Get linkable file size for %s err ret %d , %s", filename,
-        filelen, strerror(errno));
+    QPATCH_LOG_CTX(LOG_ERR, "linkable", getpid(), filename, "file-size",
+                   QPATCH_ERR_IO,
+                   "Get linkable file size failed ret %d, %s", filelen,
+                   strerror(errno));
     return NULL;
   }
 
@@ -63,14 +66,18 @@ static void *linkable_file_read_to_buf(const char *filename, size_t *outlen,
   memlen = (filelen & 0xFFFFFFF0) + 0x10;
   baseptr = (unsigned char *)malloc(memlen + addlen);
   if (NULL == baseptr) {
-    LOG(LOG_ERR, "malloc error: size %d, %s", memlen + addlen, strerror(errno));
+    QPATCH_LOG_CTX(LOG_ERR, "linkable", getpid(), filename, "malloc",
+                   QPATCH_ERR_INTERNAL, "malloc size %d failed: %s",
+                   memlen + addlen, strerror(errno));
     close(fd);
     return NULL;
   }
   memset(baseptr, 0, memlen + addlen);
 
   if (lseek(fd, 0, SEEK_SET) < 0) {
-    LOG(LOG_ERR, "lseek error: fd %d, %s", fd, strerror(errno));
+    QPATCH_LOG_CTX(LOG_ERR, "linkable", getpid(), filename, "lseek",
+                   QPATCH_ERR_IO, "lseek fd %d failed: %s", fd,
+                   strerror(errno));
     return NULL;
   }
   tbuf = baseptr;
@@ -163,7 +170,9 @@ static Elf_Addr linkable_elf_rsv_symbol_repable(
     }
   } while (0);
   if (!tptr) {
-    LOG(LOG_DEBUG, "Symbol<%s> Un-Resolved!", symbolname);
+    QPATCH_LOG_CTX(LOG_DEBUG, "linkable", li && li->hp ? li->hp->pid : getpid(),
+                   symbolname, "resolve-repable", QPATCH_ERR_SYMBOL,
+                   "Symbol unresolved.");
     return 0;
   }
   if (outsymbolsize) *outsymbolsize = symbolsize;
@@ -216,7 +225,10 @@ static Elf_Addr linkable_elf_rsv_symbol(struct linkable_elf_internals *li,
   if (!tptr) {
     if ((tptr = linkable_elf_pat_repable(symbolname, pat_symbol, &symbolsize,
                                          0)) <= 0) {
-      LOG(LOG_DEBUG, "Symbol<%s> Un-Resolved!", symbolname);
+      QPATCH_LOG_CTX(LOG_DEBUG,
+                     "linkable", li && li->hp ? li->hp->pid : getpid(),
+                     symbolname, "resolve", QPATCH_ERR_SYMBOL,
+                     "Symbol unresolved.");
       return 0;
     }
   }

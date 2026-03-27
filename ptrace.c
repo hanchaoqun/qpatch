@@ -163,10 +163,12 @@ static int ptrace_arch_memcpy2stack(pid_t pid,
 int ptrace_traceme() {
   if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) < 0) {
     int err = errno;
-    LOG(LOG_ERR, "Ptrace traceme failed with error: %s", strerror(err));
-    return -1;
+    QPATCH_LOG_CTX(LOG_ERR, "ptrace", getpid(), "-", "traceme",
+                   QPATCH_ERR_ATTACH, "Ptrace traceme failed: %s",
+                   strerror(err));
+    return QPATCH_ERR_ATTACH;
   }
-  return 0;
+  return QPATCH_ERR_OK;
 }
 
 int ptrace_pid_attach(pid_t pid) {
@@ -183,21 +185,22 @@ int ptrace_pid_attach(pid_t pid) {
   }
   if (result == -1L) {
     int err = errno;
-    LOG(LOG_ERR, "Ptrace Attach for PID %d failed with error: %s", pid,
-        strerror(err));
-    return -1;
+    QPATCH_LOG_CTX(LOG_ERR, "ptrace", pid, "-", "attach", QPATCH_ERR_ATTACH,
+                   "Ptrace attach failed: %s", strerror(err));
+    return QPATCH_ERR_ATTACH;
   }
-  return 0;
+  return QPATCH_ERR_OK;
 }
 
 int ptrace_pid_detach(pid_t pid) {
   if (ptrace(PTRACE_DETACH, pid, NULL, NULL) < 0) {
     int err = errno;
-    LOG(LOG_DEBUG, "Ptrace Detach for PID %d failed with error: %s", pid,
-        strerror(err));
-    return -1;
+    QPATCH_LOG_CTX(LOG_DEBUG, "ptrace", pid, "-", "detach",
+                   QPATCH_ERR_ATTACH, "Ptrace detach failed: %s",
+                   strerror(err));
+    return QPATCH_ERR_ATTACH;
   }
-  return 0;
+  return QPATCH_ERR_OK;
 }
 
 int ptrace_pid_cont(pid_t pid) {
@@ -261,13 +264,14 @@ int ptrace_pid_wait_thread(pid_t pid, pid_t *childpid, pid_t *newpid) {
     *childpid = child_pid;
     if (child_pid < 0) {
       int err = errno;
-      LOG(LOG_ERR, "Waitpid for PID %d failed with error: %s", pid,
-          strerror(err));
-      return -1;
+      QPATCH_LOG_CTX(LOG_ERR, "ptrace", pid, "-", "wait-thread",
+                     QPATCH_ERR_ATTACH, "waitpid failed: %s", strerror(err));
+      return QPATCH_ERR_ATTACH;
     }
     if (WIFEXITED(status) || WIFSIGNALED(status)) {
-      LOG(LOG_ERR, "PID %d was terminated.", child_pid);
-      return -1;
+      QPATCH_LOG_CTX(LOG_ERR, "ptrace", pid, "-", "wait-thread",
+                     QPATCH_ERR_NOT_FOUND, "PID %d was terminated.", child_pid);
+      return QPATCH_ERR_NOT_FOUND;
     }
     if (WIFSTOPPED(status)) {
       signum = WSTOPSIG(status);
@@ -290,7 +294,7 @@ int ptrace_pid_wait_thread(pid_t pid, pid_t *childpid, pid_t *newpid) {
         break;
       } else if (signum == SIGINT) {
         LOG(LOG_ERR, "SIG SIGINT : User terminated!!");
-        return -1;
+        return QPATCH_ERR_ATTACH;
       } else {
         LOG(LOG_INFO, "SIG(%d) resent to TID %d PID %d.", signum, child_pid,
             pid);
@@ -300,7 +304,7 @@ int ptrace_pid_wait_thread(pid_t pid, pid_t *childpid, pid_t *newpid) {
       }
     }
   }
-  return 0;
+  return QPATCH_ERR_OK;
 }
 
 int ptrace_pid_wait_attach(pid_t pid, pid_t tid) {
