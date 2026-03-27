@@ -116,8 +116,8 @@ For x86_64 environments, run:
 This suite currently includes:
 - `scripts/smoke_build_help.sh`: build + CLI smoke
 - `scripts/test_x86_qpatch_replace.sh`: end-to-end `qpatch` load/activate/query/rollback replacement flow on a local C target process
-- `scripts/test_x86_gotrace_smoke.sh`: `gotrace` smoke tracing flow (auto-skip when Go toolchain is unavailable)
+- `scripts/test_x86_gotrace_smoke.sh`: currently forced skip in this phase (focus is x86 qpatch core path)
 
 Notes:
 - `scripts/test_x86_qpatch_replace.sh` auto-skips when `distorm` artifacts are unavailable, because runtime patch rewriting depends on instruction decode support.
-- `scripts/test_x86_gotrace_smoke.sh` auto-skips when local Go toolchain cannot build the temporary fixture program.
+- `scripts/test_x86_gotrace_smoke.sh` is intentionally skipped until gotrace is brought back into the active regression scope.

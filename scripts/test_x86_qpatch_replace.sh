@@ -28,6 +28,11 @@ cleanup() {
 trap cleanup EXIT
 sleep 1
 
+if ./qpatch.bin -o /tmp/cpatch_replace.o -p "$TPID" -a >/tmp/qpatch_act_before_load.log 2>&1; then
+  echo "[FAIL] activate-before-load unexpectedly succeeded"
+  exit 1
+fi
+
 ./qpatch.bin -o /tmp/cpatch_replace.o -p "$TPID" -l
 ./qpatch.bin -o /tmp/cpatch_replace.o -p "$TPID" -a
 sleep 1
@@ -42,7 +47,7 @@ if ! grep -q "patched-target-func" /tmp/qpatch_target.log; then
 fi
 
 STATUS_OUT="$(./qpatch.bin -o /tmp/cpatch_replace.o -p "$TPID" -q)"
-echo "$STATUS_OUT" | grep -Eq "ACTIVED|LOADED|INIT"
+echo "$STATUS_OUT" | grep -Eq "ACTIVED"
 
 ./qpatch.bin -o /tmp/cpatch_replace.o -p "$TPID" -r
 sleep 1
@@ -50,5 +55,7 @@ if ! grep -q "orig-target-func" /tmp/qpatch_target.log; then
   echo "[FAIL] original output not observed after rollback"
   exit 1
 fi
+STATUS_OUT_AFTER_ROLLBACK="$(./qpatch.bin -o /tmp/cpatch_replace.o -p "$TPID" -q)"
+echo "$STATUS_OUT_AFTER_ROLLBACK" | grep -Eq "INIT"
 
 echo "[PASS] x86 qpatch replace flow"
