@@ -91,3 +91,16 @@ This document defines static test plans for validating `qpatch` and `gotrace` be
 - Rollback restores original function prologue bytes.
 - No persistent side effects after repeated load/activate/rollback cycles.
 - `qpatch` and `gotrace` commands return non-zero on fatal failures.
+
+## 6. Build & CLI Smoke Guard
+
+Use a minimal guard script to keep build and CLI entrypoints healthy:
+
+```bash
+./scripts/smoke_build_help.sh
+```
+
+The script verifies:
+- project build succeeds (`qpatch.bin`, `qpatch.so`, `gotrace.bin`)
+- `qpatch` prints usage/help-like output
+- `gotrace` prints usage/help-like output

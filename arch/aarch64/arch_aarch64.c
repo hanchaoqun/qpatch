@@ -249,6 +249,10 @@ static int qpatch_arch_aarch64_run_syscall7(
     uintptr_t arg5, uintptr_t arg6, uintptr_t arg7, uintptr_t *out_ret) {
 #if defined(__aarch64__)
   if (arg7 != 0) {
+    fprintf(stderr,
+            "aarch64 syscall adapter(%s) does not support arg7=%p (expected "
+            "0)\n",
+            sys_name ? sys_name : "unknown", (void *)arg7);
     errno = EINVAL;
     return -1;
   }
