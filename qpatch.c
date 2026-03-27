@@ -1114,9 +1114,43 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
             hokf->oldname, hokf->oldaddr, tmpopcode, searchsize);
         break;
       }
-      origheadersize = get_opcode_size(tmpopcode);
+      enum qpatch_arch_cpu patch_cpu = QPATCH_ARCH_CPU_UNKNOWN;
+      if (pp->arch_ops) {
+        patch_cpu = pp->arch_ops->cpu;
+      }
+
+      origheadersize = get_opcode_size_arch(tmpopcode, patch_cpu);
+      if (origheadersize == 0 || origheadersize > searchsize) {
+        LOG(LOG_ERR,
+            "Act-Fun-Hook<%s> decode first op size(%u) invalid for searchsize(%u).",
+            hokf->oldname, origheadersize, searchsize);
+        rc = QPATCH_ERR_STATE;
+        break;
+      }
       while (origheadersize < JMP_OPER_CODELEN) {
-        origheadersize += get_opcode_size(&(tmpopcode[origheadersize]));
+        unsigned long nextsize = 0;
+        if (origheadersize >= searchsize) {
+          LOG(LOG_ERR,
+              "Act-Fun-Hook<%s> decode exceeded readable bytes(%u), need(%u).",
+              hokf->oldname, searchsize, JMP_OPER_CODELEN);
+          rc = QPATCH_ERR_STATE;
+          break;
+        }
+        nextsize =
+            get_opcode_size_arch(&(tmpopcode[origheadersize]), patch_cpu);
+        if (nextsize == 0 || nextsize > (searchsize - origheadersize)) {
+          LOG(LOG_ERR,
+              "Act-Fun-Hook<%s> decode next op size(%u) invalid at off(%u), "
+              "remain(%u).",
+              hokf->oldname, nextsize, origheadersize,
+              (searchsize - origheadersize));
+          rc = QPATCH_ERR_STATE;
+          break;
+        }
+        origheadersize += nextsize;
+      }
+      if (rc < 0) {
+        break;
       }
       if (origheadersize > LNK_MAX_CODE_ORIG_FUNHEAD_LEN) {
         LOG(LOG_ERR,

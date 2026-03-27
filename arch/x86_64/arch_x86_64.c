@@ -5,12 +5,16 @@
 // license that can be found in the LICENSE file.
 //
 //===----------------------------------------------------------------------===//
+#include <errno.h>
+
 #include "arch_x86_64.h"
 #include "../../ptrace.h"
 
 static const char *qpatch_arch_x86_64_reg_ip_name(void) {
   return "RIP";
 }
+
+#if defined(__x86_64__)
 
 static uintptr_t qpatch_arch_x86_64_reg_get_ip(const struct user *regs) {
   return regs->regs.rip;
@@ -124,6 +128,97 @@ static int qpatch_arch_x86_64_run_syscall7(
   }
   return 0;
 }
+
+#else
+
+static int qpatch_arch_x86_64_not_implemented(void) {
+  errno = ENOSYS;
+  return -1;
+}
+
+static uintptr_t qpatch_arch_x86_64_reg_get_ip(const struct user *regs) {
+  (void)regs;
+  return 0;
+}
+
+static void qpatch_arch_x86_64_reg_set_ip(struct user *regs, uintptr_t ip) {
+  (void)regs;
+  (void)ip;
+}
+
+static uintptr_t qpatch_arch_x86_64_reg_get_sp(const struct user *regs) {
+  (void)regs;
+  return 0;
+}
+
+static void qpatch_arch_x86_64_reg_set_sp(struct user *regs, uintptr_t sp) {
+  (void)regs;
+  (void)sp;
+}
+
+static uintptr_t qpatch_arch_x86_64_reg_get_ret(const struct user *regs) {
+  (void)regs;
+  return 0;
+}
+
+static int qpatch_arch_x86_64_call_func(pid_t pid, const char *fn_name,
+                                        struct user *io_regs, uintptr_t fn,
+                                        uintptr_t arg1, uintptr_t arg2,
+                                        uintptr_t *out_ret) {
+  (void)pid;
+  (void)fn_name;
+  (void)io_regs;
+  (void)fn;
+  (void)arg1;
+  (void)arg2;
+  if (out_ret) {
+    *out_ret = 0;
+  }
+  return qpatch_arch_x86_64_not_implemented();
+}
+
+static int qpatch_arch_x86_64_run_syscall6(
+    pid_t pid, const char *sys_name, struct user *io_regs, uintptr_t syscallno,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
+    uintptr_t arg5, uintptr_t arg6, uintptr_t *out_ret) {
+  (void)pid;
+  (void)sys_name;
+  (void)io_regs;
+  (void)syscallno;
+  (void)arg1;
+  (void)arg2;
+  (void)arg3;
+  (void)arg4;
+  (void)arg5;
+  (void)arg6;
+  if (out_ret) {
+    *out_ret = 0;
+  }
+  return qpatch_arch_x86_64_not_implemented();
+}
+
+static int qpatch_arch_x86_64_run_syscall7(
+    pid_t pid, const char *sys_name, struct user *io_regs, uintptr_t syscallno,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
+    uintptr_t arg5, uintptr_t arg6, uintptr_t arg7, uintptr_t *out_ret) {
+  (void)pid;
+  (void)sys_name;
+  (void)io_regs;
+  (void)syscallno;
+  (void)arg1;
+  (void)arg2;
+  (void)arg3;
+  (void)arg4;
+  (void)arg5;
+  (void)arg6;
+  (void)arg7;
+  if (out_ret) {
+    *out_ret = 0;
+  }
+  return qpatch_arch_x86_64_not_implemented();
+}
+
+#endif
 
 const struct qpatch_arch_ops *qpatch_arch_x86_64_get(void) {
   static const struct qpatch_arch_ops k_ops = {
