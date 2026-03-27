@@ -67,6 +67,28 @@ This document defines static test plans for validating `qpatch` and `gotrace` be
 - **Scenario**: target terminates while patch command runs.
 - **Expected**: operation aborts safely; no uncontrolled loop.
 
+### TC-QP-204: Fault Injection - Load/Activate Recoverability
+- **Purpose**: verify `load/activate` mid-flight failures always roll back to a retryable patch-room state and leave no half-activated state.
+- **Cases**:
+  1. **Target process exits mid-operation**  
+     - Injection point: after `qpatch_open_room` succeeded, before final room status update.
+     - Expected recovery:
+       - command returns non-zero with structured log fields (`action`, `pid`, `symbol`, `phase`);
+       - room is not left in `ACTIVED` with partial function writes;
+       - next run can retry from clean state (`INIT` for load failure, `LOADED` for activate failure after rollback).
+  2. **Symbol resolution failure**  
+     - Injection point: unresolved replacement/hook symbol while building linkable object.
+     - Expected recovery:
+       - load fails with unified symbol-related error code;
+       - room is closed/reset to retryable state (no stale half-loaded metadata);
+       - subsequent fixed patch file can be loaded without manual cleanup.
+  3. **Target memory write failure**  
+     - Injection point: force `ptrace` write failure when writing function jump or room header.
+     - Expected recovery:
+       - activate path performs reverse write-back of already replaced prologues using saved backups;
+       - room header is restored to `LOADED` (not `ACTIVED`) so activation can be retried;
+       - failure path emits rollback error code when reverse write-back itself fails.
+
 ## 4. gotrace
 
 ### TC-GT-001: Launch and Trace Go Program

@@ -9,6 +9,99 @@
 
 #include "qpatch.h"
 
+static int qpatch_close_room_for_retry(struct ptrace_pid *pp, pid_t pid,
+                                       uintptr_t dllhandle,
+                                       size_t mroom_total_len,
+                                       const char *action,
+                                       const char *phase) {
+  const unsigned char *paradata = NULL;
+  size_t paradatalen = 0;
+  uintptr_t callret = 0;
+  struct qpatch_call_in qci;
+  int rc = QPATCH_ERR_OK;
+
+  if (!pp || !dllhandle || !mroom_total_len) {
+    return QPATCH_ERR_INVALID_PARAM;
+  }
+
+  memset(&qci, 0, sizeof(qci));
+  qci.hostpid = pid;
+  qci.version = QPATCH_VERSION;
+  qci.para1 = mroom_total_len;
+  paradata = (const unsigned char *)&qci;
+  paradatalen = sizeof(qci);
+  if ((rc = ptrace_pp_call_library(pp, dllhandle, "qpatch_close_room", paradata,
+                                   paradatalen, &callret, 0)) < 0) {
+    QPATCH_LOG_CTX(LOG_ERR, action, pid, "-", phase, QPATCH_ERR_ROLLBACK,
+                   "Call qpatch_close_room failed.");
+    return QPATCH_ERR_ROLLBACK;
+  }
+
+  if (!(void *)callret) {
+    QPATCH_LOG_CTX(LOG_ERR, action, pid, "-", phase, QPATCH_ERR_ROLLBACK,
+                   "qpatch_close_room returned NULL.");
+    return QPATCH_ERR_ROLLBACK;
+  }
+  return QPATCH_ERR_OK;
+}
+
+static int qpatch_activate_rollback(struct ptrace_pid *pp, pid_t pid,
+                                    struct qpatch_mmap_room *mroom,
+                                    uintptr_t room_addr, const char *action) {
+  size_t idx = 0;
+  int rc = QPATCH_ERR_OK;
+  struct linkable_elf_rep_fun *repf = NULL;
+  struct linkable_elf_hook_fun *hokf = NULL;
+
+  if (!pp || !mroom || !room_addr) {
+    return QPATCH_ERR_INVALID_PARAM;
+  }
+
+  for (idx = 0; idx < mroom->rephdr.repfuns_num; idx++) {
+    repf = &(mroom->rephdr.repfuns[idx]);
+    if (!repf->isreplaced || repf->funbaklen != LNK_MAX_CODE_BAK_LEN) {
+      continue;
+    }
+    if (ptrace_pid_writearray(pp->hp->pid, repf->oldaddr, repf->funbak,
+                              LNK_MAX_CODE_BAK_LEN) < 0) {
+      QPATCH_LOG_CTX(LOG_ERR, action, pid, repf->name, "rollback-rep-write",
+                     QPATCH_ERR_ROLLBACK,
+                     "Failed to restore original code at %p.", repf->oldaddr);
+      rc = QPATCH_ERR_ROLLBACK;
+      continue;
+    }
+    repf->funbaklen = 0;
+    repf->isreplaced = FALSE;
+  }
+
+  for (idx = 0; idx < mroom->rephdr.hookfuns_num; idx++) {
+    hokf = &(mroom->rephdr.hookfuns[idx]);
+    if (!hokf->isreplaced || hokf->funbaklen != LNK_MAX_CODE_BAK_LEN) {
+      continue;
+    }
+    if (ptrace_pid_writearray(pp->hp->pid, hokf->oldaddr, hokf->funbak,
+                              LNK_MAX_CODE_BAK_LEN) < 0) {
+      QPATCH_LOG_CTX(LOG_ERR, action, pid, hokf->oldname, "rollback-hook-write",
+                     QPATCH_ERR_ROLLBACK,
+                     "Failed to restore original code at %p.", hokf->oldaddr);
+      rc = QPATCH_ERR_ROLLBACK;
+      continue;
+    }
+    hokf->funbaklen = 0;
+    hokf->isreplaced = FALSE;
+  }
+
+  mroom->mhdr.status = QPATCH_STATUS_LOADED;
+  if (ptrace_pid_writearray(pp->hp->pid, room_addr, (unsigned char *)mroom,
+                            sizeof(struct qpatch_mmap_room)) < 0) {
+    QPATCH_LOG_CTX(LOG_ERR, action, pid, "-", "rollback-room-write",
+                   QPATCH_ERR_ROLLBACK,
+                   "Failed to write rollback room state back to target.");
+    return QPATCH_ERR_ROLLBACK;
+  }
+  return rc;
+}
+
 void qpatch_status_error(int act, int status) {
   // int state = -1;
   char *state_str = NULL;
@@ -775,7 +868,7 @@ int qpatch_rol_patch(pid_t pid, const char *objname, const char *dllname,
 
 int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
                      int symelang) {
-  int rc = 0;
+  int rc = QPATCH_ERR_OK;
   struct linkable_elf_internals *li = NULL;
   struct ptrace_pid *pp = NULL;
   const unsigned char *paradata = 0;
@@ -802,22 +895,27 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
   unsigned char tmpopcode[LNK_MAX_CODE_ORIG_FUNHEAD_SEARCH_LEN];
   size_t searchsize = LNK_MAX_CODE_ORIG_FUNHEAD_SEARCH_LEN;
   size_t origheadersize = 0;
+  int is_attached = FALSE;
+  int need_rollback = FALSE;
+  void *qpatch_open_room_ret = NULL;
 
   /* fill with NOP */
   memset(tmpopcode, NOP_OPER_CODE, LNK_MAX_CODE_ORIG_FUNHEAD_SEARCH_LEN);
   do {
     objsize = linkable_get_file_size(objname);
     if (!objsize) {
-      LOG(LOG_ERR, "Error to get objsize %s!", objname);
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "objsize",
+                     QPATCH_ERR_IO, "Error to get objsize %s!", objname);
+      rc = QPATCH_ERR_IO;
       break;
     }
     objsize = (objsize & 0xFFFFFFF0) + 0x10;
 
     pp = (struct ptrace_pid *)ptrace_pp_create(pid, symelang);
     if (!pp) {
-      LOG(LOG_ERR, "Error to create ptrace_pid!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "ptrace-create",
+                     QPATCH_ERR_INTERNAL, "Error to create ptrace_pid!");
+      rc = QPATCH_ERR_INTERNAL;
       break;
     }
 
@@ -830,15 +928,18 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
     if ((rc = ptrace_pp_inject_library(pp, dllname, "qpatch_check", paradata,
                                        paradatalen, &dllhandle, &callret)) <
         0) {
-      LOG(LOG_ERR, "Error to inject library!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "inject",
+                     QPATCH_ERR_INJECT, "Error to inject library!");
+      rc = QPATCH_ERR_INJECT;
       break;
     }
     long qpatch_check_ret = (long)callret;
     if ((qpatch_check_ret != QPATCH_RET_OK) &&
         (qpatch_check_ret != QPATCH_RET_DUP)) {
-      LOG(LOG_ERR, "Error to call qpatch_check() ret %d!", qpatch_check_ret);
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "check",
+                     QPATCH_ERR_CALL, "Error to call qpatch_check() ret %d!",
+                     qpatch_check_ret);
+      rc = QPATCH_ERR_CALL;
       break;
     }
     LOG(LOG_INFO, "Call qpatch_check() ret %d.", qpatch_check_ret);
@@ -855,15 +956,16 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
     callret = 0;
     if ((rc = ptrace_pp_call_library(pp, dllhandle, "qpatch_open_room",
                                      paradata, paradatalen, &callret, 1)) < 0) {
-      LOG(LOG_ERR, "Error to inject library!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "open-room",
+                     QPATCH_ERR_CALL, "Error to call qpatch_open_room.");
+      rc = QPATCH_ERR_CALL;
       break;
     }
-    void *qpatch_open_room_ret = (void *)callret;
+    qpatch_open_room_ret = (void *)callret;
     if (!qpatch_open_room_ret) {
-      LOG(LOG_ERR, "Error to call qpatch_open_room() ret %d!",
-          qpatch_open_room_ret);
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "open-room",
+                     QPATCH_ERR_CALL, "qpatch_open_room returned NULL.");
+      rc = QPATCH_ERR_CALL;
       break;
     }
     LOG(LOG_INFO, "Call qpatch_open_room() ret %p.", qpatch_open_room_ret);
@@ -872,14 +974,15 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
     if ((rc = ptrace_pp_read_data(pp, (uintptr_t)qpatch_open_room_ret,
                                   (unsigned char *)&mroom,
                                   sizeof(struct qpatch_mmap_room))) < 0) {
-      LOG(LOG_ERR, "Read mmap room error!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "activate", pid, "-", "read-room",
+                     QPATCH_ERR_READ, "Read mmap room error!");
+      rc = QPATCH_ERR_READ;
       break;
     }
     if (mroom.mhdr.version != QPATCH_VERSION) {
       LOG(LOG_ERR, "Read mmap room version(%u) is not expect(%u)!",
           mroom.mhdr.version, QPATCH_VERSION);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     if (mroom.mhdr.status != QPATCH_STATUS_LOADED) {
@@ -887,7 +990,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
           "Read mmap room status(%u) is not expect(QPATCH_STATUS_LOADED:%u)!",
           mroom.mhdr.status, QPATCH_STATUS_LOADED);
       qpatch_status_error(1, mroom.mhdr.status);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     if (mroom.mhdr.roomlen != mroom_total_len) {
@@ -895,7 +998,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
           "Read mmap room len(%u) is not equal(%u), please rol patch and "
           "retry!",
           mroom.mhdr.roomlen, mroom_total_len);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     baseptr = (void *)mroom.ptr2data;
@@ -905,7 +1008,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
           "Qpatch room error ptr2data(baseptr), addr(%p) + baseoff(%p) != "
           "baseptr(%p)!!",
           qpatch_open_room_ret, LNK_OBJ_BASE_OFFSET_IN_ROOM, baseptr);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     base_rephdr_ptr = (void *)mroom.ptr2rephdr;
@@ -934,14 +1037,27 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
     }
 
     LOG(LOG_DEBUG, "Attaching to PID %d", pp->hp->pid);
-    if ((rc = ptrace_pid_attach(pp->hp->pid)) < 0) break;
+    if ((rc = ptrace_pid_attach(pp->hp->pid)) < 0) {
+      rc = QPATCH_ERR_ATTACH;
+      break;
+    }
+    is_attached = TRUE;
     LOG(LOG_DEBUG, "Waiting attach request to complete...");
-    if ((rc = ptrace_pid_wait(pp->hp->pid)) < 0) break;
+    if ((rc = ptrace_pid_wait(pp->hp->pid)) < 0) {
+      rc = QPATCH_ERR_ATTACH;
+      break;
+    }
     if (pp->hp->elang == ELF_E_LANG_GO) {
       LOG(LOG_DEBUG, "Set trace syscall...");
-      if ((rc = ptrace_pid_syscall(pp->hp->pid)) < 0) break;
+      if ((rc = ptrace_pid_syscall(pp->hp->pid)) < 0) {
+        rc = QPATCH_ERR_ATTACH;
+        break;
+      }
       LOG(LOG_DEBUG, "Waiting an syscall ...");
-      if ((rc = ptrace_pid_wait(pp->hp->pid)) < 0) break;
+      if ((rc = ptrace_pid_wait(pp->hp->pid)) < 0) {
+        rc = QPATCH_ERR_ATTACH;
+        break;
+      }
     }
     if (mroom.rephdr._pat_callback_active_before) {
       LOG(LOG_INFO, "Call patchfun: long _pat_callback_active_before()...");
@@ -951,13 +1067,14 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
         LOG(LOG_ERR,
             "Call patchfun: long _pat_callback_active_before()<%p> ret<%u>",
             mroom.rephdr._pat_callback_active_before, patfuncallret);
+        rc = QPATCH_ERR_CALL;
         break;
       }
       LOG(LOG_INFO,
           "Call patchfun: long _pat_callback_active_before()<%p> ret<%u>",
           mroom.rephdr._pat_callback_active_before, patfuncallret);
       if (OK != patfuncallret) {
-        rc = -1;
+        rc = QPATCH_ERR_CALL;
         LOG(LOG_ERR, "_pat_callback_active_before ret<%u> != OK<%u>",
             patfuncallret, OK);
         break;
@@ -977,7 +1094,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
       if (hokf->oldsize <= LNK_MAX_CODE_BAK_LEN) {
         LOG(LOG_ERR, "Act-Fun-Hook<%s> oldsize(%u) need at least large(%u).",
             hokf->oldname, hokf->oldsize, LNK_MAX_CODE_BAK_LEN);
-        rc = -1;
+        rc = QPATCH_ERR_STATE;
         break;
       }
 
@@ -1072,16 +1189,18 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
           jumpcode[5], jumpcode[6], jumpcode[7], offset);
 #endif
 
-      hokf->funbaklen = LNK_MAX_CODE_BAK_LEN;
-      hokf->isreplaced = TRUE;
       if ((rc = ptrace_pid_writearray(pp->hp->pid, hokf->oldaddr,
                                       (unsigned char *)jumpcode,
                                       LNK_MAX_CODE_BAK_LEN)) < 0) {
         LOG(LOG_ERR,
             "Act-Fun-Hook<%s> can't write fun from(%p) to(%p) len(%u).",
             hokf->oldname, jumpcode, hokf->oldaddr, LNK_MAX_CODE_BAK_LEN);
+        rc = QPATCH_ERR_WRITE;
         break;
       }
+      hokf->funbaklen = LNK_MAX_CODE_BAK_LEN;
+      hokf->isreplaced = TRUE;
+      need_rollback = TRUE;
       LOG(LOG_INFO, "Act-Fun-Hook replace from<%s>(%p) to<%s>(%p) ok.",
           hokf->oldname, hokf->oldaddr, hokf->newname, hokf->newaddr);
       rel_hokfuns_num++;
@@ -1104,7 +1223,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
       if (repf->oldsize <= LNK_MAX_CODE_BAK_LEN) {
         LOG(LOG_ERR, "Act-Fun<%s> oldsize(%u) need at least large(%u).",
             repf->name, repf->oldsize, LNK_MAX_CODE_BAK_LEN);
-        rc = -1;
+        rc = QPATCH_ERR_STATE;
         break;
       }
       if ((rc = ptrace_pid_readarray(pp->hp->pid, repf->oldaddr, repf->funbak,
@@ -1161,15 +1280,17 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
           jumpcode[1], jumpcode[2], jumpcode[3], jumpcode[4], jumpcode[5],
           jumpcode[6], jumpcode[7], offset);
 #endif
-      repf->funbaklen = LNK_MAX_CODE_BAK_LEN;
-      repf->isreplaced = TRUE;
       if ((rc = ptrace_pid_writearray(pp->hp->pid, repf->oldaddr,
                                       (unsigned char *)jumpcode,
                                       LNK_MAX_CODE_BAK_LEN)) < 0) {
         LOG(LOG_ERR, "Act-Fun<%s> can't write fun from(%p) to(%p) len(%u).",
             repf->name, jumpcode, repf->oldaddr, LNK_MAX_CODE_BAK_LEN);
+        rc = QPATCH_ERR_WRITE;
         break;
       }
+      repf->funbaklen = LNK_MAX_CODE_BAK_LEN;
+      repf->isreplaced = TRUE;
+      need_rollback = TRUE;
       LOG(LOG_INFO, "Act-Fun<%s> replace from(%p) to(%p) ok.", repf->name,
           repf->oldaddr, repf->newaddr);
       rel_repfuns_num++;
@@ -1184,7 +1305,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
       LOG(LOG_ERR,
           "Act patch validation failed: hook replaced(%u/%u) rep replaced(%u/%u).",
           rel_hokfuns_num, hokfuns_num, rel_repfuns_num, repfuns_num);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
 
@@ -1194,7 +1315,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
                pp->hp->pid, (uintptr_t)qpatch_open_room_ret,
                (unsigned char *)&mroom, sizeof(struct qpatch_mmap_room))) < 0) {
         LOG(LOG_ERR, "Qpatch load patch write room header to dest error!");
-        rc = -1;
+        rc = QPATCH_ERR_WRITE;
         break;
       }
     }
@@ -1206,6 +1327,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
           0) {
         LOG(LOG_ERR, "Call patchfun: long _pat_callback_active_after()<%p>",
             mroom.rephdr._pat_callback_active_after);
+        rc = QPATCH_ERR_CALL;
         break;
       }
       LOG(LOG_INFO, "Call patchfun: void _pat_callback_active_after()<%p> ok.",
@@ -1215,8 +1337,9 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
     LOG(LOG_DEBUG, "Detaching from PID %d.", pp->hp->pid);
     if (ptrace_pid_detach(pp->hp->pid) < 0) {
       LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
-      rc = -1;
+      rc = QPATCH_ERR_ATTACH;
     }
+    is_attached = FALSE;
 
     LOG(LOG_INFO,
         "Qpatch room addr(%p) len(%u) baseoff(%p) baseptr(%p) rephdroff(%p) "
@@ -1227,11 +1350,22 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
     LOG(LOG_INFO, "Act patch is ok status change to QPATCH_STATUS_ACTIVED(%u).",
         QPATCH_STATUS_ACTIVED);
   } while (0);
-  if (rc < 0) {
-    LOG(LOG_DEBUG, "Detaching from PID %d.", pp->hp->pid);
-    if (ptrace_pid_detach(pp->hp->pid) < 0) {
-      LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
-      rc = -1;
+  if (rc < 0 && pp) {
+    if (is_attached && need_rollback) {
+      int rollback_rc = qpatch_activate_rollback(pp, pid, &mroom,
+                                                 (uintptr_t)qpatch_open_room_ret,
+                                                 "activate");
+      if (rollback_rc < 0) {
+        rc = rollback_rc;
+      }
+    }
+    if (is_attached) {
+      LOG(LOG_DEBUG, "Detaching from PID %d.", pp->hp->pid);
+      if (ptrace_pid_detach(pp->hp->pid) < 0) {
+        LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
+        rc = QPATCH_ERR_ATTACH;
+      }
+      is_attached = FALSE;
     }
   }
 
@@ -1249,7 +1383,7 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
 
 int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
                      int symelang, const char *pat_symbol) {
-  int rc = 0;
+  int rc = QPATCH_ERR_OK;
   struct linkable_elf_internals *li = NULL;
   struct ptrace_pid *pp = NULL;
   const unsigned char *paradata = 0;
@@ -1265,6 +1399,7 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
   struct qpatch_mmap_room_hdr mhdr;
   struct qpatch_mmap_room mroom;
   size_t mroom_total_len = 0;
+  int room_opened = FALSE;
 
   // char * libcname = "/mnt/d/gopath/src/0318/libc.so";
   // size_t libcsize = linkable_get_file_size(libcname);
@@ -1274,16 +1409,18 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
 
     objsize = linkable_get_file_size(objname);
     if (!objsize) {
-      LOG(LOG_ERR, "Error to get objsize %s!", objname);
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "objsize", QPATCH_ERR_IO,
+                     "Error to get objsize %s!", objname);
+      rc = QPATCH_ERR_IO;
       break;
     }
     objsize = (objsize & 0xFFFFFFF0) + 0x10;
 
     pp = (struct ptrace_pid *)ptrace_pp_create(pid, symelang);
     if (!pp) {
-      LOG(LOG_ERR, "Error to create ptrace_pid!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "ptrace-create",
+                     QPATCH_ERR_INTERNAL, "Error to create ptrace_pid!");
+      rc = QPATCH_ERR_INTERNAL;
       break;
     }
 
@@ -1296,15 +1433,17 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
     if ((rc = ptrace_pp_inject_library(pp, dllname, "qpatch_check", paradata,
                                        paradatalen, &dllhandle, &callret)) <
         0) {
-      LOG(LOG_ERR, "Error to inject library!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "inject", QPATCH_ERR_INJECT,
+                     "Error to inject library!");
+      rc = QPATCH_ERR_INJECT;
       break;
     }
     long qpatch_check_ret = (long)callret;
     if ((qpatch_check_ret != QPATCH_RET_OK) &&
         (qpatch_check_ret != QPATCH_RET_DUP)) {
-      LOG(LOG_ERR, "Error to call qpatch_check() ret %d!", qpatch_check_ret);
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "check", QPATCH_ERR_CALL,
+                     "Error to call qpatch_check() ret %d!", qpatch_check_ret);
+      rc = QPATCH_ERR_CALL;
       break;
     }
     LOG(LOG_INFO, "Call qpatch_check() ret %d.", qpatch_check_ret);
@@ -1321,31 +1460,34 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
     callret = 0;
     if ((rc = ptrace_pp_call_library(pp, dllhandle, "qpatch_open_room",
                                      paradata, paradatalen, &callret, 1)) < 0) {
-      LOG(LOG_ERR, "Error to inject library!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "open-room", QPATCH_ERR_CALL,
+                     "Error to call qpatch_open_room.");
+      rc = QPATCH_ERR_CALL;
       break;
     }
     void *qpatch_open_room_ret = (void *)callret;
     if (!qpatch_open_room_ret) {
-      LOG(LOG_ERR, "Error to call qpatch_open_room() ret %d!",
-          qpatch_open_room_ret);
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "open-room", QPATCH_ERR_CALL,
+                     "qpatch_open_room returned NULL.");
+      rc = QPATCH_ERR_CALL;
       break;
     }
+    room_opened = TRUE;
     LOG(LOG_INFO, "Call qpatch_open_room() ret %d.", qpatch_open_room_ret);
 
     memset(&mhdr, 0, sizeof(struct qpatch_mmap_room_hdr));
     if ((rc = ptrace_pp_read_data(pp, (uintptr_t)qpatch_open_room_ret,
                                   (unsigned char *)&mhdr,
                                   sizeof(struct qpatch_mmap_room_hdr))) < 0) {
-      LOG(LOG_ERR, "Read mmap room header error!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "read-room", QPATCH_ERR_READ,
+                     "Read mmap room header error!");
+      rc = QPATCH_ERR_READ;
       break;
     }
     if (mhdr.version != QPATCH_VERSION) {
       LOG(LOG_ERR, "Read mmap room version(%u) is not expect(%u)!",
           mhdr.version, QPATCH_VERSION);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     if (mhdr.status != QPATCH_STATUS_INIT) {
@@ -1353,7 +1495,7 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
           "Read mmap room status(%u) is not expect(QPATCH_STATUS_INIT:%u)!",
           mhdr.status, QPATCH_STATUS_INIT);
       qpatch_status_error(0, mhdr.status);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     if (mhdr.roomlen != 0 && mhdr.roomlen != mroom_total_len) {
@@ -1361,7 +1503,7 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
           "Read mmap room len(%u) is not equal(%u), please rol patch and "
           "retry!",
           mhdr.roomlen, mroom_total_len);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
     pltgotptr = (void *)((size_t)qpatch_open_room_ret +
@@ -1381,14 +1523,15 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
         pid, symelang, objname, (void *)baseptr, (void *)base_rephdr_ptr,
         bssptr, LNK_MAX_BSS_LEN, pltgotptr, LNK_MAX_PLTGOT_LEN, pat_symbol);
     if (!li) {
-      LOG(LOG_ERR, "Error to create obj_image!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "linkable-create",
+                     QPATCH_ERR_INTERNAL, "Error to create obj_image!");
+      rc = QPATCH_ERR_INTERNAL;
       break;
     }
     if (li->objlen != objsize) {
       LOG(LOG_ERR, "Error to match the obj_image<%d> size to obj_file<%d> !",
           li->objlen, objsize);
-      rc = -1;
+      rc = QPATCH_ERR_STATE;
       break;
     }
 
@@ -1397,8 +1540,9 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
     if ((rc = ptrace_pp_write_data(
              pp, (uintptr_t)baseptr, (unsigned char *)li->objptr,
              li->objlen + LNK_MAX_PLTGOT_LEN + LNK_MAX_BSS_LEN)) < 0) {
-      LOG(LOG_ERR, "Qpatch load patch write objbuf to dest error!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "write-obj", QPATCH_ERR_WRITE,
+                     "Qpatch load patch write objbuf to dest error!");
+      rc = QPATCH_ERR_WRITE;
       break;
     }
 
@@ -1424,8 +1568,10 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
     if ((rc = ptrace_pp_write_data(pp, (uintptr_t)qpatch_open_room_ret,
                                    (unsigned char *)&mroom,
                                    sizeof(struct qpatch_mmap_room))) < 0) {
-      LOG(LOG_ERR, "Qpatch load patch write room header to dest error!");
-      rc = -1;
+      QPATCH_LOG_CTX(LOG_ERR, "load", pid, "-", "write-room",
+                     QPATCH_ERR_WRITE,
+                     "Qpatch load patch write room header to dest error!");
+      rc = QPATCH_ERR_WRITE;
       break;
     }
     LOG(LOG_INFO,
@@ -1437,6 +1583,19 @@ int qpatch_lod_patch(pid_t pid, const char *objname, const char *dllname,
     LOG(LOG_INFO, "Lod patch is ok status change to QPATCH_STATUS_LOADED(%u).",
         QPATCH_STATUS_LOADED);
   } while (0);
+
+  if (rc < 0 && pp && room_opened) {
+    int rollback_rc =
+        qpatch_close_room_for_retry(pp, pid, dllhandle, mroom_total_len, "load",
+                                    "rollback-close-room");
+    if (rollback_rc < 0) {
+      rc = rollback_rc;
+    } else {
+      QPATCH_LOG_CTX(LOG_INFO, "load", pid, "-", "rollback-close-room",
+                     QPATCH_ERR_OK,
+                     "Load failed and room rolled back to retryable state.");
+    }
+  }
 
   if (li) {
     linkable_elf_obj_destory(li);
