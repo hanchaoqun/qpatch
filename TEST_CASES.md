@@ -46,9 +46,22 @@ This document defines static test plans for validating `qpatch` and `gotrace` be
 - **Precondition**: patch contains multiple replacement/hook symbols.
 - **Expected**: all valid symbols applied; rollback restores all modified functions.
 
-### TC-QP-104: Boundary of Hook/Replace Limits
-- **Input**: construct patch approaching/exceeding internal limits (`LNK_MAX_HOOK_FUNC_COUNT`, `LNK_MAX_REP_FUNC_COUNT`).
-- **Expected**: safe rejection with logs when exceeding limits; no memory corruption.
+### TC-QP-104: Hook/Replace 数量限制说明（用户视角）
+
+#### 限制说明
+- 单个补丁对象中，Hook 函数数量上限为 `LNK_MAX_HOOK_FUNC_COUNT = 20`。
+- 单个补丁对象中，Replace 函数数量上限为 `LNK_MAX_REP_FUNC_COUNT = 200`。
+- 超出限制时应被安全拒绝（带日志），且不应出现内存破坏或进程崩溃。
+
+#### 规避建议
+- **拆分补丁对象**：将超大补丁按功能域拆为多个 `.o` 分批加载。
+- **优先核心路径**：先补最关键函数，非关键函数延后批次。
+- **发布前预检查**：在构建阶段统计 `_qpatch_hookfun_` 前缀函数数与替换函数数，超过阈值直接 fail fast。
+- **分阶段灰度**：先在小流量/预发环境执行 `load -> active -> query -> rollback` 全流程。
+
+#### 测试输入与期望
+- **Input**: 构造接近与超出上述上限的补丁对象。
+- **Expected**: 超限场景返回清晰错误并安全退出；阈值内场景可正常执行。
 
 ## 3. Robustness & Error Handling
 
