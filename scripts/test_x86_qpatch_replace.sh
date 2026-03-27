@@ -17,7 +17,7 @@ fi
 
 bash ./build.sh >/tmp/qpatch_build.log 2>&1
 
-gcc -g -O0 -fno-pie -no-pie tests/x86/fixtures/cmain.c -o /tmp/qpatch_cmain
+gcc -g -O0 -fno-pie -no-pie -rdynamic tests/x86/fixtures/cmain.c -o /tmp/qpatch_cmain
 gcc -g -O0 -fno-pie -c tests/x86/fixtures/cpatch_replace.c -o /tmp/cpatch_replace.o
 
 /tmp/qpatch_cmain >/tmp/qpatch_target.log 2>&1 &
