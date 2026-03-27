@@ -123,3 +123,22 @@ This suite currently includes:
 Notes:
 - `scripts/test_x86_qpatch_replace.sh` auto-skips when `distorm` artifacts are unavailable, because runtime patch rewriting depends on instruction decode support.
 - `scripts/test_x86_gotrace_smoke.sh` is intentionally skipped until gotrace is brought back into the active regression scope.
+
+
+## 8. AArch64 Regression Guard Scripts
+
+For AArch64 environments, run:
+
+```bash
+./scripts/test_aarch64_suite.sh
+```
+
+This suite currently includes:
+- `scripts/smoke_build_help.sh`: build + CLI smoke
+- `scripts/test_aarch64_qpatch_replace.sh`: end-to-end `qpatch` load/activate flow + AArch64-specific ABI and overwrite-size guards
+- `scripts/test_aarch64_qpatch_stress.sh`: repeated load/activate/rollback stability with ABI mismatch guard
+
+AArch64-specific boundary differences from x86:
+- **Fixed-width instruction encoding**: AArch64 instructions are 4 bytes each. The tiny fixture (`tiny_func`) is asserted to have symbol size divisible by 4 before running activation tests.
+- **Minimum overwrite length for entry jump**: current runtime patch logic requires at least `JMP_OPER_CODELEN` bytes (14 bytes on 64-bit builds). For AArch64 this implies at least 4 instructions are usually needed to satisfy overwrite room.
+- **Register calling convention assertion**: replace fixture validates argument/return path via `target_func(long a, long b)`, asserting patched behavior only when `(a, b) == (7, 5)` (AArch64 argument registers `x0/x1`, return register `x0`).
