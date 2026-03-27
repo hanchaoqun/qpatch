@@ -66,6 +66,21 @@ static void ptrace_pp_reg_set_ip(const struct ptrace_pid *pp, struct user *regs,
 #endif
 }
 
+static uintptr_t ptrace_arch_reg_get_sp(const struct qpatch_arch_ops *arch_ops,
+                                        const struct user *regs) {
+  if (arch_ops && arch_ops->reg_get_sp) {
+    return arch_ops->reg_get_sp(regs);
+  }
+#if defined(__x86_64__)
+  return regs ? regs->regs.rsp : 0;
+#elif defined(__i386__)
+  return regs ? regs->regs.esp : 0;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
 int ptrace_traceme() {
   if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) < 0) {
     int err = errno;
@@ -1087,13 +1102,14 @@ int ptrace_pid_inject_libc(pid_t pid, int elang, const char *libcname,
     if ((rc = ptrace_pid_getregs(pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_DEBUG, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_arch_reg_get_sp(arch_ops, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_readlong(
-               pid, PTRACE_REG_SP(iregs) + idx * sizeof(size_t), &stack[idx])) <
+               pid, iregs_sp + idx * sizeof(size_t), &stack[idx])) <
           0)
         break;
       LOG(LOG_DEBUG, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -1150,13 +1166,14 @@ int ptrace_pid_inject_libc(pid_t pid, int elang, const char *libcname,
       break;
     }
     LOG(LOG_DEBUG, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_arch_reg_get_sp(arch_ops, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_writelong(
-               pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx])) <
+               pid, oregs_sp + idx * sizeof(size_t), stack[idx])) <
           0)
         break;
       LOG(LOG_DEBUG, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
