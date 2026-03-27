@@ -1,183 +1,161 @@
 # qpatch
 
-Hot patching for Linux user-space processes (C/C++/Go support).
+Hot patching for Linux user-space processes, with function replacement/hook support and companion runtime tracing (`gotrace`).
 
-## Features
+## Why qpatch
 
-- Patch running user-space processes without restart.
-- Replace existing functions in target process.
-- Hook functions (including glibc functions) via naming convention.
-- Patch lifecycle callbacks for activation/deactivation.
-- Works in pure user-space (no kernel modification).
-- Includes `gotrace` for Go function-call tracing.
+`qpatch` is designed for **in-process hot updates** where restarting a service is expensive or risky. It patches live function entry points through ptrace-assisted remote writes, while preserving a rollback path.
 
----
+The repository also includes `gotrace`, a ptrace breakpoint tracer that helps inspect runtime call behavior in Go/C/C++ binaries.
 
-## Repository Layout
+## Core Principles
 
-- `qpatch.c` - CLI for patch lifecycle (`load/active/rollback/query`)
-- `libqpatch.c` - injected shared library (`qpatch.so`) managing remote mmap room
-- `gotrace.c` - Go function-call tracer based on ptrace breakpoints
-- `ptrace.c/.h` - low-level process control and remote call/injection
-- `symbol.c/.h` - ELF/proc maps parsing and symbol resolution
-- `linkable.c/.h` - relocatable object loading and patch metadata building
-- `opcode.c/.h` - instruction length decoding
-- `arch/` - architecture-specific register/call implementation (`x86_64`, `aarch64`)
-- `build.sh` - build script
+1. **User-space only**: no kernel module dependency.
+2. **State-driven lifecycle**: `INIT -> LOADED -> ACTIVED`.
+3. **Recoverability first**: partial activation failures attempt reverse write-back.
+4. **Architecture-aware implementation**: x86_64 and AArch64 execution models are handled explicitly.
+5. **Patch payload as object file**: keeps integration simple with standard toolchains.
 
----
+## Components
 
-## Architecture Overview
+- `qpatch.bin`: lifecycle CLI (`load`, `activate`, `rollback`, `query`).
+- `qpatch.so`: injected runtime that owns target process patch room.
+- `gotrace.bin`: function-call tracer for attach/launch workflows.
+- `ptrace.*`: remote memory/register/call primitives.
+- `symbol.*`, `linkable.*`, `opcode.*`: ELF parsing, relocation, patch metadata, instruction safety checks.
+- `arch/*`: architecture dispatch and ABI-specific operations.
 
-`qpatch` consists of three layers:
+## Patch Lifecycle
 
-1. **CLI control layer (`qpatch.bin`)**  
-   Handles patch lifecycle commands and remote orchestration.
-2. **Injected runtime layer (`qpatch.so`)**  
-   Provides remote mmap room management and state persistence inside target process.
-3. **Low-level infrastructure**  
-   `ptrace` + ELF symbol/linking components to resolve symbols, relocate patch objects,
-   and modify target function entry code safely.
-
-Patch state machine (`libqpatch.h`):
-
-- `INIT -> LOADED -> ACTIVED`
-
----
-
-## Build
-
-> Requires Linux toolchain and project dependencies available locally.
-
-```bash
-./build.sh
+```text
+INIT --load--> LOADED --activate--> ACTIVED --rollback--> INIT
 ```
 
-Outputs:
+- `load` writes prepared patch payload and metadata into target room.
+- `activate` rewrites target function entries to replacement/hook handlers.
+- `rollback` restores original bytes from backups.
+- `query` reads and prints current room state.
 
-- `qpatch.bin`
-- `qpatch.so`
-- `gotrace.bin`
+## Patch Semantics
 
----
+### 1) Function replacement
 
-## qpatch CLI
-
-```bash
-./qpatch.bin -o <patch.obj> -p <pid> [ACTION] [OPTION]
-```
-
-### Actions
-
-- `-l` load patch
-- `-a` activate patch
-- `-r` rollback patch
-- `-q` query patch status
-
-### Options
-
-- `-s <file>` patch symbol file
-- `-d <level>` debug level (`1:debug`, `2:info`)
-- `-e <lang>` target language (`c` or `go`)
-- `-f <file>` custom path to `qpatch.so`
-
----
-
-## Patch Object Rules
-
-### 1) Function Replacement
-
-Define function with same name/signature in patch object:
+Define same symbol in patch object:
 
 ```c
 void sleep(int i) {
-  printf("sleep called!\n");
+  printf("sleep called from patch\n");
 }
 ```
 
-### 2) Function Hook
+### 2) Function hook
 
-Use hook naming prefix:
+Use hook symbol prefix:
 
 - `_qpatch_hookfun_<target_symbol>`
-
-Example:
 
 ```c
 void sleep(int i);
 
 void _qpatch_hookfun_sleep(int i) {
-  printf("before sleep called!\n");
+  printf("before sleep\n");
   sleep(i);
-  printf("after sleep called!\n");
+  printf("after sleep\n");
 }
 ```
 
----
-
-## Typical Workflow
-
-1. Compile patch source to object:
+## Build
 
 ```bash
+./build.sh
+```
+
+Build outputs:
+- `qpatch.bin`
+- `qpatch.so`
+- `gotrace.bin`
+
+## CLI Usage
+
+```bash
+./qpatch.bin -o <patch.obj> -p <pid> [ACTION] [OPTION]
+```
+
+Actions:
+- `-l` load patch
+- `-a` activate patch
+- `-r` rollback patch
+- `-q` query patch status
+
+Options:
+- `-s <file>` patch symbol file
+- `-d <level>` debug level (`1:debug`, `2:info`)
+- `-e <lang>` target language (`c` or `go`)
+- `-f <file>` runtime library path (defaults to `qpatch.so`)
+
+## Quick Workflow
+
+```bash
+# 1) build patch object
 gcc -c patch.c -o patch.o
-```
 
-2. Load patch:
-
-```bash
+# 2) load
 ./qpatch.bin -o ./patch.o -p <pid> -l
-```
 
-3. Activate patch:
-
-```bash
+# 3) activate
 ./qpatch.bin -o ./patch.o -p <pid> -a
-```
 
-4. Query status:
-
-```bash
+# 4) query
 ./qpatch.bin -o ./patch.o -p <pid> -q
-```
 
-5. Rollback:
-
-```bash
+# 5) rollback
 ./qpatch.bin -o ./patch.o -p <pid> -r
 ```
 
----
-
 ## gotrace
 
-Track and print function calls of a Go process.
-
-### Start and trace a program
+Launch and trace:
 
 ```bash
 ./gotrace.bin ./your_go_binary
 ```
 
-### Attach to a running process
+Attach and trace:
 
 ```bash
 ./gotrace.bin -p <pid>
 ```
 
-Options:
+Common options:
+- `-c`: disable C++ demangle
+- `-v <level>`: log verbosity
 
-- `-c` disable C++ demangle
-- `-v <level>` log verbosity
+## Documentation Map
 
----
+- Architecture design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Detailed technical design: [`docs/DETAILED_DESIGN.md`](docs/DETAILED_DESIGN.md)
+- Completed feature list: [`docs/FEATURE_STATUS.md`](docs/FEATURE_STATUS.md)
+- Test scenarios and regression matrix: [`TEST_CASES.md`](TEST_CASES.md)
 
 ## Testing
 
-See [`TEST_CASES.md`](./TEST_CASES.md) for functional, boundary, and regression test cases
-covering both `qpatch` and `gotrace` workflows.
+Smoke check:
 
----
+```bash
+./scripts/smoke_build_help.sh
+```
+
+x86 suite:
+
+```bash
+./scripts/test_x86_suite.sh
+```
+
+AArch64 suite:
+
+```bash
+./scripts/test_aarch64_suite.sh
+```
 
 ## License
 
