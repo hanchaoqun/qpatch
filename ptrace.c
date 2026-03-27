@@ -109,11 +109,18 @@ static int ptrace_arch_memcpy2stack(pid_t pid,
                                     struct user *iregs, const void *mem,
                                     size_t memsize, uintptr_t *out_addr) {
   uintptr_t sp = 0;
+  size_t stack_alignment = 8;
+  size_t alloc_size = 0;
   if (!iregs || !mem || memsize == 0 || !out_addr) {
     return -1;
   }
+  if (arch_ops && arch_ops->stack_alignment) {
+    stack_alignment = arch_ops->stack_alignment;
+  }
+  alloc_size = ((memsize + stack_alignment - 1) / stack_alignment) *
+               stack_alignment;
   sp = ptrace_arch_reg_get_sp(arch_ops, iregs);
-  sp = sp - (((memsize) / 8 + 1) * 8);
+  sp = sp - alloc_size;
   if (ptrace_arch_reg_set_sp(arch_ops, iregs, sp) < 0) {
     return -1;
   }
