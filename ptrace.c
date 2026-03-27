@@ -9,6 +9,78 @@
 
 int ptrace_pp_detach(struct ptrace_pid *pp);
 
+static const char *ptrace_pp_reg_ip_name(const struct ptrace_pid *pp) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_ip_name) {
+    return pp->arch_ops->reg_ip_name();
+  }
+  return "IP";
+}
+
+static uintptr_t ptrace_pp_reg_get_ip(const struct ptrace_pid *pp,
+                                      const struct user *regs) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_get_ip) {
+    return pp->arch_ops->reg_get_ip(regs);
+  }
+#if defined(__x86_64__)
+  return regs ? regs->regs.rip : 0;
+#elif defined(__i386__)
+  return regs ? regs->regs.eip : 0;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
+static uintptr_t ptrace_pp_reg_get_sp(const struct ptrace_pid *pp,
+                                      const struct user *regs) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_get_sp) {
+    return pp->arch_ops->reg_get_sp(regs);
+  }
+#if defined(__x86_64__)
+  return regs ? regs->regs.rsp : 0;
+#elif defined(__i386__)
+  return regs ? regs->regs.esp : 0;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
+static void ptrace_pp_reg_set_ip(const struct ptrace_pid *pp, struct user *regs,
+                                 uintptr_t ip) {
+  if (pp && pp->arch_ops && pp->arch_ops->reg_set_ip) {
+    pp->arch_ops->reg_set_ip(regs, ip);
+    return;
+  }
+#if defined(__x86_64__)
+  if (regs) {
+    regs->regs.rip = ip;
+  }
+#elif defined(__i386__)
+  if (regs) {
+    regs->regs.eip = ip;
+  }
+#else
+  (void)regs;
+  (void)ip;
+#endif
+}
+
+static uintptr_t ptrace_arch_reg_get_sp(const struct qpatch_arch_ops *arch_ops,
+                                        const struct user *regs) {
+  if (arch_ops && arch_ops->reg_get_sp) {
+    return arch_ops->reg_get_sp(regs);
+  }
+#if defined(__x86_64__)
+  return regs ? regs->regs.rsp : 0;
+#elif defined(__i386__)
+  return regs ? regs->regs.esp : 0;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
 int ptrace_traceme() {
   if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) < 0) {
     int err = errno;
@@ -614,20 +686,13 @@ int ptrace_pp_set_eip(struct ptrace_pid *pp, uintptr_t ptr) {
       int err = errno;
       LOG(LOG_ERR, "Ptrace getregs failed with error %s", strerror(err));
     } else {
-      const char *ip_name = PTRACE_REG_IP_NAME;
-      uintptr_t old_ip = PTRACE_REG_IP(regs);
-      if (pp->arch_ops && pp->arch_ops->reg_ip_name &&
-          pp->arch_ops->reg_get_ip) {
-        ip_name = pp->arch_ops->reg_ip_name();
-        old_ip = pp->arch_ops->reg_get_ip(&regs);
-      }
+      const char *ip_name = ptrace_pp_reg_ip_name(pp);
+      uintptr_t old_ip = ptrace_pp_reg_get_ip(pp, &regs);
+      uintptr_t old_sp = ptrace_pp_reg_get_sp(pp, &regs);
       LOG(LOG_ERR, "%s is %p", ip_name, (void *)old_ip);
+      LOG(LOG_DEBUG, "SP is %p", (void *)old_sp);
       if (ptr == pp->hp->exe_entry_point) ptr += sizeof(void *);
-      if (pp->arch_ops && pp->arch_ops->reg_set_ip) {
-        pp->arch_ops->reg_set_ip(&regs, ptr);
-      } else {
-        PTRACE_REG_IP(regs) = ptr;
-      }
+      ptrace_pp_reg_set_ip(pp, &regs, ptr);
       if (ptrace(PTRACE_SETREGS, pp->hp->pid, NULL, &regs) < 0) {
         int err = errno;
         LOG(LOG_ERR, "Ptrace setregs failed with error %s", strerror(err));
@@ -838,13 +903,14 @@ int ptrace_pp_call_library(struct ptrace_pid *pp, uintptr_t indlladdr,
     if ((rc = ptrace_pid_getregs(pp->hp->pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_DEBUG, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_pp_reg_get_sp(pp, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_readlong(pp->hp->pid,
-                                    PTRACE_REG_SP(iregs) + idx * sizeof(size_t),
+                                    iregs_sp + idx * sizeof(size_t),
                                     &stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -949,13 +1015,13 @@ int ptrace_pp_call_library(struct ptrace_pid *pp, uintptr_t indlladdr,
       break;
     }
     LOG(LOG_DEBUG, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_pp_reg_get_sp(pp, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_writelong(
-               pp->hp->pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t),
-               stack[idx])) < 0)
+               pp->hp->pid, oregs_sp + idx * sizeof(size_t), stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
@@ -1036,13 +1102,14 @@ int ptrace_pid_inject_libc(pid_t pid, int elang, const char *libcname,
     if ((rc = ptrace_pid_getregs(pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_DEBUG, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_arch_reg_get_sp(arch_ops, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_readlong(
-               pid, PTRACE_REG_SP(iregs) + idx * sizeof(size_t), &stack[idx])) <
+               pid, iregs_sp + idx * sizeof(size_t), &stack[idx])) <
           0)
         break;
       LOG(LOG_DEBUG, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -1099,13 +1166,14 @@ int ptrace_pid_inject_libc(pid_t pid, int elang, const char *libcname,
       break;
     }
     LOG(LOG_DEBUG, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_arch_reg_get_sp(arch_ops, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_writelong(
-               pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx])) <
+               pid, oregs_sp + idx * sizeof(size_t), stack[idx])) <
           0)
         break;
       LOG(LOG_DEBUG, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
@@ -1209,13 +1277,14 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
     if ((rc = ptrace_pid_getregs(pp->hp->pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_DEBUG, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_pp_reg_get_sp(pp, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_readlong(pp->hp->pid,
-                                    PTRACE_REG_SP(iregs) + idx * sizeof(size_t),
+                                    iregs_sp + idx * sizeof(size_t),
                                     &stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -1348,13 +1417,13 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
       break;
     }
     LOG(LOG_DEBUG, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_pp_reg_get_sp(pp, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_writelong(
-               pp->hp->pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t),
-               stack[idx])) < 0)
+               pp->hp->pid, oregs_sp + idx * sizeof(size_t), stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
