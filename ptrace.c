@@ -558,7 +558,8 @@ struct ptrace_pid *ptrace_pp_create_inner(pid_t pid, int symelang,
   pp->pid = pid;
   pp->arch_ops = qpatch_arch_select(hp);
   if (!pp->arch_ops) {
-    LOG(LOG_ERR, "Unsupported target architecture bit(%u).", hp->is64);
+    LOG(LOG_ERR, "Unsupported target architecture machine(%u) bit(%u).",
+        hp->machine, hp->is64);
     symbol_pid_destroy(hp);
     free(pp);
     return 0;

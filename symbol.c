@@ -617,7 +617,8 @@ int symbol_elf_ei_create_hdrs_symtabs(struct symbol_elf_internals* ei) {
 
   /* LOG(LOG_DEBUG, "Machine %d", hdr.e_machine); */
   ei->machine = hdr.e_machine;
-  if (hdr.e_machine != EM_X86_64 && hdr.e_machine != EM_386) {
+  if (hdr.e_machine != EM_X86_64 && hdr.e_machine != EM_386 &&
+      hdr.e_machine != EM_AARCH64) {
     LOG(LOG_ERR, "ERROR: unsupported processor!");
     return -1;
   }
@@ -655,7 +656,7 @@ int symbol_elf_ei_create_hdrs_symtabs(struct symbol_elf_internals* ei) {
 static struct symbol_elf_sym* symbol_elf_load_file(
     const char* filename, size_t* symbols_num, uintptr_t* entry_point,
     uintptr_t* base_adjust, struct symbol_elf_interp* interp,
-    enum symbol_elf_bit* is64) {
+    enum symbol_elf_bit* is64, size_t* machine) {
   int rc = 0;
   struct symbol_elf_sym* symbols = NULL;
   struct symbol_elf_internals ei;
@@ -697,6 +698,9 @@ static struct symbol_elf_sym* symbol_elf_load_file(
     }
     if (is64) {
       *is64 = ei.is64;
+    }
+    if (machine) {
+      *machine = ei.machine;
     }
     if (entry_point) {
       *entry_point = ei.entry_point;
@@ -1131,7 +1135,8 @@ static uintptr_t symbol_ld_find_sym_a(const struct symbol_ld_library* lib,
   if (lib && symbol && lib->pathname) {
     size_t syms_num = 0;
     struct symbol_elf_sym* syms =
-        symbol_elf_load_file(lib->pathname, &syms_num, NULL, NULL, NULL, NULL);
+        symbol_elf_load_file(lib->pathname, &syms_num, NULL, NULL, NULL, NULL,
+                             NULL);
     if (syms && syms_num > 0) {
       size_t idx = 0;
       /* LOG(LOG_DEBUG, "%u symbols found in %s", syms_num, lib->pathname); */
@@ -1579,10 +1584,11 @@ struct symbol_elf_pid* symbol_pid_create_inner(pid_t pid, int symelang,
     memset(hp, 0, sizeof(*hp));
     hp->pid = pid;
     hp->is64 = ELF_IS_NEITHER;
+    hp->machine = 0;
     hp->elang = symelang;
     hp->exe_symbols = symbol_elf_load_file(
         filename, &hp->exe_symbols_num, &hp->exe_entry_point,
-        &hp->exe_base_adjust, &hp->exe_interp, &hp->is64);
+        &hp->exe_base_adjust, &hp->exe_interp, &hp->is64, &hp->machine);
     if (!hp->exe_symbols) {
       LOG(LOG_ERR, "Unable to find any symbols in exe.");
       rc = -1;
