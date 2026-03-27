@@ -46,22 +46,22 @@ This document defines static test plans for validating `qpatch` and `gotrace` be
 - **Precondition**: patch contains multiple replacement/hook symbols.
 - **Expected**: all valid symbols applied; rollback restores all modified functions.
 
-### TC-QP-104: Hook/Replace 数量限制说明（用户视角）
+### TC-QP-104: Hook/Replace Limit Guidance (User-Facing)
 
-#### 限制说明
-- 单个补丁对象中，Hook 函数数量上限为 `LNK_MAX_HOOK_FUNC_COUNT = 20`。
-- 单个补丁对象中，Replace 函数数量上限为 `LNK_MAX_REP_FUNC_COUNT = 200`。
-- 超出限制时应被安全拒绝（带日志），且不应出现内存破坏或进程崩溃。
+#### Limit Description
+- In a single patch object, the Hook function upper bound is `LNK_MAX_HOOK_FUNC_COUNT = 20`.
+- In a single patch object, the Replace function upper bound is `LNK_MAX_REP_FUNC_COUNT = 200`.
+- When limits are exceeded, the operation should be safely rejected (with logs), with no memory corruption or target process crash.
 
-#### 规避建议
-- **拆分补丁对象**：将超大补丁按功能域拆为多个 `.o` 分批加载。
-- **优先核心路径**：先补最关键函数，非关键函数延后批次。
-- **发布前预检查**：在构建阶段统计 `_qpatch_hookfun_` 前缀函数数与替换函数数，超过阈值直接 fail fast。
-- **分阶段灰度**：先在小流量/预发环境执行 `load -> active -> query -> rollback` 全流程。
+#### Mitigation Recommendations
+- **Split patch objects**: break oversized patches into multiple `.o` files by functional domain.
+- **Prioritize critical paths**: patch high-priority functions first; schedule non-critical functions in later batches.
+- **Preflight validation in build pipeline**: count `_qpatch_hookfun_` prefixed functions and replacement functions; fail fast when over threshold.
+- **Phased rollout**: validate `load -> active -> query -> rollback` in pre-production or low-traffic stages first.
 
-#### 测试输入与期望
-- **Input**: 构造接近与超出上述上限的补丁对象。
-- **Expected**: 超限场景返回清晰错误并安全退出；阈值内场景可正常执行。
+#### Test Input and Expected Result
+- **Input**: construct patch objects near and beyond the limits above.
+- **Expected**: over-limit cases return clear errors and exit safely; within-limit cases execute normally.
 
 ## 3. Robustness & Error Handling
 
