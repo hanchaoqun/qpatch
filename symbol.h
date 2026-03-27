@@ -193,6 +193,7 @@ enum symbol_elf_elang { ELF_E_LANG_C = 0, ELF_E_LANG_GO, ELF_E_LANG_MAX };
 struct symbol_elf_pid {
   pid_t pid;
   enum symbol_elf_bit is64;
+  size_t machine;
   enum symbol_elf_elang elang;
   struct symbol_elf_sym* exe_symbols;
   size_t exe_symbols_num;
