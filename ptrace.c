@@ -553,6 +553,14 @@ struct ptrace_pid *ptrace_pp_create_inner(pid_t pid, int symelang,
   pp->hp = hp;
   pp->attached = FALSE;
   pp->pid = pid;
+  pp->arch_ops = qpatch_arch_select(hp);
+  if (!pp->arch_ops) {
+    LOG(LOG_ERR, "Unsupported target architecture bit(%u).", hp->is64);
+    symbol_pid_destroy(hp);
+    free(pp);
+    return 0;
+  }
+  LOG(LOG_DEBUG, "Target architecture selected: %s.", pp->arch_ops->name);
 
   return pp;
 }
@@ -602,14 +610,26 @@ int ptrace_pp_set_eip(struct ptrace_pid *pp, uintptr_t ptr) {
       int err = errno;
       LOG(LOG_ERR, "Ptrace getregs failed with error %s", strerror(err));
     } else {
-      LOG(LOG_ERR, "%s is %p", PTRACE_REG_IP_NAME, (void *)PTRACE_REG_IP(regs));
+      const char *ip_name = PTRACE_REG_IP_NAME;
+      uintptr_t old_ip = PTRACE_REG_IP(regs);
+      if (pp->arch_ops && pp->arch_ops->reg_ip_name &&
+          pp->arch_ops->reg_get_ip) {
+        ip_name = pp->arch_ops->reg_ip_name();
+        old_ip = pp->arch_ops->reg_get_ip(&regs);
+      }
+      LOG(LOG_ERR, "%s is %p", ip_name, (void *)old_ip);
       if (ptr == pp->hp->exe_entry_point) ptr += sizeof(void *);
-      PTRACE_REG_IP(regs) = ptr;
+      if (pp->arch_ops && pp->arch_ops->reg_set_ip) {
+        pp->arch_ops->reg_set_ip(&regs, ptr);
+      } else {
+        PTRACE_REG_IP(regs) = ptr;
+      }
       if (ptrace(PTRACE_SETREGS, pp->hp->pid, NULL, &regs) < 0) {
         int err = errno;
         LOG(LOG_ERR, "Ptrace setregs failed with error %s", strerror(err));
       } else {
-        LOG(LOG_INFO, "[%s:%d] Set %s to %p", PTRACE_REG_IP_NAME, ptr);
+        LOG(LOG_INFO, "[%s:%d] Set %s to %p", __FUNCTION__, __LINE__, ip_name,
+            (void *)ptr);
         rc = 0;
       }
     }

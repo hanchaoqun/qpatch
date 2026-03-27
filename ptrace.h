@@ -10,6 +10,7 @@
 
 #include "define.h"
 #include "symbol.h"
+#include "arch/arch.h"
 
 #if __WORDSIZE == 64
 #define PTRACE_REG_IP_NAME "RIP"
@@ -251,6 +252,7 @@ struct ptrace_pid {
   struct symbol_elf_pid* hp;
   pid_t pid;
   int attached;
+  const struct qpatch_arch_ops* arch_ops;
 };
 
 struct ptrace_pid* ptrace_pp_create(pid_t pid, int symelang);
