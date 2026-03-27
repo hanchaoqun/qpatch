@@ -1383,7 +1383,7 @@ static int symbol_ld_find_default_lib(struct symbol_elf_pid* hp) {
   int c_found = FALSE;
   int dl_found = FALSE;
   int pthread_found = FALSE;
-  if (!hp || !hp->libs) {
+  if (!hp) {
     return -1;
   }
   if (hp->ld_maps_num <= 0) {
@@ -1427,7 +1427,7 @@ static int symbol_ld_find_default_lib(struct symbol_elf_pid* hp) {
 
 static int symbol_ld_find_default_func(struct symbol_elf_pid* hp) {
   size_t symbsize = 0;
-  if (!hp || !hp->libs) {
+  if (!hp) {
     return -1;
   }
   if (hp->ld_maps_num <= 0) {
