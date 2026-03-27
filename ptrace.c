@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "ptrace.h"
+#include <sys/uio.h>
 
 int ptrace_pp_detach(struct ptrace_pid *pp);
 
@@ -361,23 +362,44 @@ int ptrace_pid_wait(pid_t pid) {
 int ptrace_pid_getregs(pid_t pid, struct user *regs) {
   if (!regs) return -1;
   memset(regs, 0, sizeof(*regs));
+#if defined(__aarch64__)
+  struct iovec iov = {.iov_base = &regs->regs, .iov_len = sizeof(regs->regs)};
+  if (ptrace(PTRACE_GETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
+    int err = errno;
+    LOG(LOG_ERR, "Ptrace Getregset for PID %d failed with error: %s", pid,
+        strerror(err));
+    return -1;
+  }
+#else
   if (ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0) {
     int err = errno;
     LOG(LOG_ERR, "Ptrace Getregs for PID %d failed with error: %s", pid,
         strerror(err));
     return -1;
   }
+#endif
   return 0;
 }
 
 int ptrace_pid_setregs(pid_t pid, const struct user *regs) {
   if (!regs) return -1;
+#if defined(__aarch64__)
+  struct iovec iov = {
+      .iov_base = (void *)&regs->regs, .iov_len = sizeof(regs->regs)};
+  if (ptrace(PTRACE_SETREGSET, pid, (void *)NT_PRSTATUS, &iov) < 0) {
+    int err = errno;
+    LOG(LOG_ERR, "Ptrace Setregset for PID %d failed with error: %s", pid,
+        strerror(err));
+    return -1;
+  }
+#else
   if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) {
     int err = errno;
     LOG(LOG_ERR, "Ptrace Setregs for PID %d failed with error: %s", pid,
         strerror(err));
     return -1;
   }
+#endif
   return 0;
 }
 
@@ -595,7 +617,8 @@ int ptrace_pid_writelong(pid_t pid, uintptr_t target, uintptr_t invalue) {
 int ptrace_pid_call_func_noparam(pid_t pid, uintptr_t funcaddr,
                                  uintptr_t *outcallret) {
   int rc = 0;
-  const struct qpatch_arch_ops *arch_ops = qpatch_arch_default();
+  struct symbol_elf_pid *hp = NULL;
+  const struct qpatch_arch_ops *arch_ops = NULL;
   /* The stack is read-write and not executable */
   struct user iregs; /* intermediate registers */
   struct user oregs; /* original registers */
@@ -608,8 +631,18 @@ int ptrace_pid_call_func_noparam(pid_t pid, uintptr_t funcaddr,
     LOG(LOG_ERR, "Invalid arguments.");
     return -1;
   }
+  hp = symbol_pid_create_inner(pid, ELF_E_LANG_C, 0);
+  if (hp) {
+    arch_ops = qpatch_arch_select(hp);
+  }
+  if (!arch_ops) {
+    arch_ops = qpatch_arch_default();
+  }
   if (!arch_ops || !arch_ops->call_func) {
     LOG(LOG_ERR, "No architecture call handler found.");
+    if (hp) {
+      symbol_pid_destroy(hp);
+    }
     return -1;
   }
   do {
@@ -617,13 +650,13 @@ int ptrace_pid_call_func_noparam(pid_t pid, uintptr_t funcaddr,
     if ((rc = ptrace_pid_getregs(pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_INFO, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_arch_reg_get_sp(arch_ops, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
-      if ((rc = ptrace_pid_readlong(
-               pid, PTRACE_REG_SP(iregs) + idx * sizeof(size_t), &stack[idx])) <
-          0)
+      if ((rc = ptrace_pid_readlong(pid, iregs_sp + idx * sizeof(size_t),
+                                    &stack[idx])) < 0)
         break;
       LOG(LOG_INFO, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -655,13 +688,13 @@ int ptrace_pid_call_func_noparam(pid_t pid, uintptr_t funcaddr,
       break;
     }
     LOG(LOG_INFO, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_arch_reg_get_sp(arch_ops, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
-      if ((rc = ptrace_pid_writelong(
-               pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx])) <
-          0)
+      if ((rc = ptrace_pid_writelong(pid, oregs_sp + idx * sizeof(size_t),
+                                     stack[idx])) < 0)
         break;
       LOG(LOG_INFO, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
@@ -669,6 +702,9 @@ int ptrace_pid_call_func_noparam(pid_t pid, uintptr_t funcaddr,
     }
     LOG(LOG_INFO, "Copy stack back out ok.");
   } while (0);
+  if (hp) {
+    symbol_pid_destroy(hp);
+  }
   return rc;
 }
 
