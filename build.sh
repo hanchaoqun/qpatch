@@ -9,7 +9,7 @@ cd $PWDIR
 
 #compile qpatch
 echo "make qpatch..."
-gcc -g arch/arch.c arch/x86_64/arch_x86_64.c arch/aarch64/arch_aarch64.c ptrace.c symbol.c define.c linkable.c opcode.c qpatch.c -Wall -Werror -o qpatch.bin ./distorm64-v1.7.30/distorm64.a
+gcc -g arch/arch.c arch/x86_64/arch_x86_64.c ptrace.c symbol.c define.c linkable.c opcode.c qpatch.c -Wall -Werror -o qpatch.bin ./distorm64-v1.7.30/distorm64.a
 gcc libqpatch.c -fPIC -shared -o qpatch.so
 echo "make qpatch...ok"
 
@@ -18,7 +18,7 @@ chmod 755 qpatch.so
 
 #compile gotrace
 echo "make gotrace..."
-gcc -g arch/arch.c arch/x86_64/arch_x86_64.c arch/aarch64/arch_aarch64.c ptrace.c symbol.c define.c linkable.c opcode.c hashmap.c/hashmap.c gotrace.c -Wall -Werror -o gotrace.bin -lstdc++ ./distorm64-v1.7.30/distorm64.a
+gcc -g arch/arch.c arch/x86_64/arch_x86_64.c ptrace.c symbol.c define.c linkable.c opcode.c hashmap.c/hashmap.c gotrace.c -Wall -Werror -o gotrace.bin -lstdc++ ./distorm64-v1.7.30/distorm64.a
 echo "make gotrace...ok"
 
 chmod 755 gotrace.bin

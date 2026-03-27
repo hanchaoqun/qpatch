@@ -7,7 +7,6 @@
 //===----------------------------------------------------------------------===//
 #include "arch.h"
 
-#include "aarch64/arch_aarch64.h"
 #include "x86_64/arch_x86_64.h"
 
 const struct qpatch_arch_ops *qpatch_arch_select(
@@ -19,12 +18,4 @@ const struct qpatch_arch_ops *qpatch_arch_select(
     return qpatch_arch_x86_64_get();
   }
   return NULL;
-}
-
-const struct qpatch_arch_ops *qpatch_arch_default(void) {
-#if defined(__aarch64__)
-  return qpatch_arch_aarch64_get();
-#else
-  return qpatch_arch_x86_64_get();
-#endif
 }
