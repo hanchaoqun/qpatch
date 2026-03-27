@@ -117,6 +117,7 @@ This suite currently includes:
 - `scripts/smoke_build_help.sh`: build + CLI smoke
 - `scripts/test_x86_qpatch_replace.sh`: end-to-end `qpatch` load/activate/query/rollback replacement flow on a local C target process
 - `scripts/test_x86_qpatch_smallfunc_guard.sh`: verifies activation is rejected for tiny functions that cannot satisfy minimum overwrite length
+- `scripts/test_x86_qpatch_stress.sh`: multi-cycle load/active/rollback stability and short-lived target robustness check
 - `scripts/test_x86_gotrace_smoke.sh`: currently forced skip in this phase (focus is x86 qpatch core path)
 
 Notes:
