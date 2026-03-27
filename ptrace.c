@@ -888,13 +888,14 @@ int ptrace_pp_call_library(struct ptrace_pid *pp, uintptr_t indlladdr,
     if ((rc = ptrace_pid_getregs(pp->hp->pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_DEBUG, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_pp_reg_get_sp(pp, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_readlong(pp->hp->pid,
-                                    PTRACE_REG_SP(iregs) + idx * sizeof(size_t),
+                                    iregs_sp + idx * sizeof(size_t),
                                     &stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -999,13 +1000,13 @@ int ptrace_pp_call_library(struct ptrace_pid *pp, uintptr_t indlladdr,
       break;
     }
     LOG(LOG_DEBUG, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_pp_reg_get_sp(pp, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_writelong(
-               pp->hp->pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t),
-               stack[idx])) < 0)
+               pp->hp->pid, oregs_sp + idx * sizeof(size_t), stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
@@ -1259,13 +1260,14 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
     if ((rc = ptrace_pid_getregs(pp->hp->pid, &oregs)) < 0) break;
     memcpy(&iregs, &oregs, sizeof(oregs));
     LOG(LOG_DEBUG, "Copying stack out...");
+    uintptr_t iregs_sp = ptrace_pp_reg_get_sp(pp, &iregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_readlong(pp->hp->pid,
-                                    PTRACE_REG_SP(iregs) + idx * sizeof(size_t),
+                                    iregs_sp + idx * sizeof(size_t),
                                     &stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyFrom idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(iregs) + idx * sizeof(size_t), stack[idx]);
+          iregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack error %s.", strerror(errno));
@@ -1398,13 +1400,13 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
       break;
     }
     LOG(LOG_DEBUG, "Copying stack back...");
+    uintptr_t oregs_sp = ptrace_pp_reg_get_sp(pp, &oregs);
     for (idx = 0; idx < sizeof(stack) / sizeof(uintptr_t); ++idx) {
       if ((rc = ptrace_pid_writelong(
-               pp->hp->pid, PTRACE_REG_SP(oregs) + idx * sizeof(size_t),
-               stack[idx])) < 0)
+               pp->hp->pid, oregs_sp + idx * sizeof(size_t), stack[idx])) < 0)
         break;
       LOG(LOG_DEBUG, "CopyBack idx[%u] SP[%p] V[%p].", idx,
-          PTRACE_REG_SP(oregs) + idx * sizeof(size_t), stack[idx]);
+          oregs_sp + idx * sizeof(size_t), stack[idx]);
     }
     if (rc < 0) {
       LOG(LOG_ERR, "Copy stack back error %s.", strerror(errno));
