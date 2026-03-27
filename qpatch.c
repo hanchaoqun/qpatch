@@ -707,8 +707,12 @@ int qpatch_rol_patch(pid_t pid, const char *objname, const char *dllname,
     ptrace_pid_cont(pp->hp->pid);
     LOG(LOG_DEBUG, "Detaching from PID %d.", pp->hp->pid);
     if (ptrace_pid_detach(pp->hp->pid) < 0) {
-      LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
-      rc = -1;
+      if (errno == ESRCH) {
+        LOG(LOG_DEBUG, "PID %d already exited before detach.", pp->hp->pid);
+      } else {
+        LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
+        rc = -1;
+      }
     }
 
     LOG(LOG_INFO,
@@ -748,8 +752,12 @@ int qpatch_rol_patch(pid_t pid, const char *objname, const char *dllname,
    */
     LOG(LOG_DEBUG, "Detaching from PID %d.", pp->hp->pid);
     if (ptrace_pid_detach(pp->hp->pid) < 0) {
-      LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
-      rc = -1;
+      if (errno == ESRCH) {
+        LOG(LOG_DEBUG, "PID %d already exited before detach.", pp->hp->pid);
+      } else {
+        LOG(LOG_DEBUG, "Error detaching from PID %d", pp->hp->pid);
+        rc = -1;
+      }
     }
   }
 
