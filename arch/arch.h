@@ -21,6 +21,7 @@ struct qpatch_arch_ops {
   enum qpatch_arch_cpu cpu;
   const char *name;
   enum symbol_elf_bit elf_bit;
+  size_t stack_alignment;
 
   const char *(*reg_ip_name)(void);
   uintptr_t (*reg_get_ip)(const struct user *regs);

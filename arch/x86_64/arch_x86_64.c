@@ -130,6 +130,7 @@ const struct qpatch_arch_ops *qpatch_arch_x86_64_get(void) {
       .cpu = QPATCH_ARCH_CPU_X86_64,
       .name = "x86_64",
       .elf_bit = ELF_IS_64BIT,
+      .stack_alignment = 16,
       .reg_ip_name = qpatch_arch_x86_64_reg_ip_name,
       .reg_get_ip = qpatch_arch_x86_64_reg_get_ip,
       .reg_set_ip = qpatch_arch_x86_64_reg_set_ip,
