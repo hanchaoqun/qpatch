@@ -239,7 +239,7 @@ int ptrace_pid_wait_thread(pid_t pid, pid_t *childpid, pid_t *newpid) {
         if (((status >> 16) & 0xFFFF) == PTRACE_EVENT_CLONE ||
             ((status >> 16) & 0xFFFF) == PTRACE_EVENT_FORK ||
             ((status >> 16) & 0xFFFF) == PTRACE_EVENT_VFORK) {
-          if (ptrace(PTRACE_GETEVENTMSG, childpid, 0, &new_pid) != -1) {
+          if (ptrace(PTRACE_GETEVENTMSG, child_pid, 0, &new_pid) != -1) {
             *newpid = new_pid;
             LOG(LOG_INFO, "New thread %d created.", new_pid);
             return 1;
