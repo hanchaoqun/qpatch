@@ -36,6 +36,11 @@ struct qpatch_arch_ops {
                       uintptr_t syscallno, uintptr_t arg1, uintptr_t arg2,
                       uintptr_t arg3, uintptr_t arg4, uintptr_t arg5,
                       uintptr_t arg6, uintptr_t *out_ret);
+  /*
+   * Note: some architectures (e.g. AArch64) only support up to 6 syscall args.
+   * Implementations may reject non-zero arg7 with EINVAL and require callers to
+   * pass arg7 == 0.
+   */
   int (*run_syscall7)(pid_t pid, const char *sys_name, struct user *iregs,
                       uintptr_t syscallno, uintptr_t arg1, uintptr_t arg2,
                       uintptr_t arg3, uintptr_t arg4, uintptr_t arg5,
