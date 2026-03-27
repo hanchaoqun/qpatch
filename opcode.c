@@ -14,7 +14,7 @@
 #endif
 #endif
 
-unsigned long get_opcode_size_64(unsigned char* startaddress) {
+static unsigned long get_opcode_size_x86_64(unsigned char* startaddress) {
 #if defined(QPATCH_HAS_DISTORM)
   _DecodedInst decodeResult[50];
   unsigned int uiCount = 0;
@@ -37,4 +37,34 @@ unsigned long get_opcode_size_64(unsigned char* startaddress) {
    */
   return 1;
 #endif
+}
+
+unsigned long get_opcode_size_arch(unsigned char* startaddress,
+                                   enum qpatch_arch_cpu cpu) {
+  if (!startaddress) {
+    return 0;
+  }
+
+  if (cpu == QPATCH_ARCH_CPU_AARCH64) {
+    /*
+     * AArch64 has fixed-width 4-byte instructions.
+     * This keeps prologue slicing architecture-correct without x86 decoder
+     * dependency.
+     */
+    return 4;
+  }
+
+  if (cpu == QPATCH_ARCH_CPU_X86_64) {
+    return get_opcode_size_x86_64(startaddress);
+  }
+
+#if defined(__aarch64__)
+  return 4;
+#else
+  return get_opcode_size_x86_64(startaddress);
+#endif
+}
+
+unsigned long get_opcode_size_64(unsigned char* startaddress) {
+  return get_opcode_size_arch(startaddress, QPATCH_ARCH_CPU_X86_64);
 }
