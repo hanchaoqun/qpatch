@@ -975,9 +975,10 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
         continue;
       }
       if (hokf->oldsize <= LNK_MAX_CODE_BAK_LEN) {
-        LOG(LOG_INFO, "Act-Fun-Hook<%s> oldsize(%u) need at least large(%u).",
+        LOG(LOG_ERR, "Act-Fun-Hook<%s> oldsize(%u) need at least large(%u).",
             hokf->oldname, hokf->oldsize, LNK_MAX_CODE_BAK_LEN);
-        continue;
+        rc = -1;
+        break;
       }
 
       if ((rc = ptrace_pid_readarray(pp->hp->pid, hokf->oldaddr, hokf->funbak,
@@ -1001,12 +1002,13 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
         origheadersize += get_opcode_size(&(tmpopcode[origheadersize]));
       }
       if (origheadersize > LNK_MAX_CODE_ORIG_FUNHEAD_LEN) {
-        LOG(LOG_INFO,
+        LOG(LOG_ERR,
             "Act-Fun-Hook<%s> oldsize(%u) passheadersize(%u) "
             "exceed(LNK_MAX_CODE_ORIG_FUNHEAD_LEN:%u).",
             hokf->oldname, hokf->oldsize, origheadersize,
             LNK_MAX_CODE_ORIG_FUNHEAD_LEN);
-        continue;
+        rc = -1;
+        break;
       }
 
       memset(hokf->origfunhead, NOP_OPER_CODE, LNK_MAX_CODE_ORIG_FUNHEAD_LEN);
@@ -1100,9 +1102,10 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
         continue;
       }
       if (repf->oldsize <= LNK_MAX_CODE_BAK_LEN) {
-        LOG(LOG_INFO, "Act-Fun<%s> oldsize(%u) need at least large(%u).",
+        LOG(LOG_ERR, "Act-Fun<%s> oldsize(%u) need at least large(%u).",
             repf->name, repf->oldsize, LNK_MAX_CODE_BAK_LEN);
-        continue;
+        rc = -1;
+        break;
       }
       if ((rc = ptrace_pid_readarray(pp->hp->pid, repf->oldaddr, repf->funbak,
                                      LNK_MAX_CODE_BAK_LEN)) < 0) {
@@ -1175,6 +1178,15 @@ int qpatch_act_patch(pid_t pid, const char *objname, const char *dllname,
       break;
     }
     /* replace functions end */
+
+    if (rc == 0 &&
+        (rel_hokfuns_num != hokfuns_num || rel_repfuns_num != repfuns_num)) {
+      LOG(LOG_ERR,
+          "Act patch validation failed: hook replaced(%u/%u) rep replaced(%u/%u).",
+          rel_hokfuns_num, hokfuns_num, rel_repfuns_num, repfuns_num);
+      rc = -1;
+      break;
+    }
 
     if (rel_hokfuns_num || rel_repfuns_num) {
       mroom.mhdr.status = QPATCH_STATUS_ACTIVED;
