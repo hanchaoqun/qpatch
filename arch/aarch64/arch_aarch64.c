@@ -34,14 +34,64 @@ static int qpatch_arch_aarch64_setregs(pid_t pid, struct user_pt_regs *regs) {
 }
 #endif
 
-static uintptr_t qpatch_arch_aarch64_reg_get_zero(const struct user *regs) {
+static uintptr_t qpatch_arch_aarch64_reg_get_ip(const struct user *regs) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return 0;
+  }
+  return regs->regs.pc;
+#else
   (void)regs;
   return 0;
+#endif
 }
 
-static void qpatch_arch_aarch64_reg_set_noop(struct user *regs, uintptr_t v) {
+static void qpatch_arch_aarch64_reg_set_ip(struct user *regs, uintptr_t ip) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return;
+  }
+  regs->regs.pc = ip;
+#else
   (void)regs;
-  (void)v;
+  (void)ip;
+#endif
+}
+
+static uintptr_t qpatch_arch_aarch64_reg_get_sp(const struct user *regs) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return 0;
+  }
+  return regs->regs.sp;
+#else
+  (void)regs;
+  return 0;
+#endif
+}
+
+static void qpatch_arch_aarch64_reg_set_sp(struct user *regs, uintptr_t sp) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return;
+  }
+  regs->regs.sp = sp;
+#else
+  (void)regs;
+  (void)sp;
+#endif
+}
+
+static uintptr_t qpatch_arch_aarch64_reg_get_ret(const struct user *regs) {
+#if defined(__aarch64__)
+  if (!regs) {
+    return 0;
+  }
+  return regs->regs.regs[0];
+#else
+  (void)regs;
+  return 0;
+#endif
 }
 
 static int qpatch_arch_aarch64_not_implemented(void) {
@@ -54,45 +104,69 @@ static int qpatch_arch_aarch64_call_func(pid_t pid, const char *fn_name,
                                          uintptr_t arg1, uintptr_t arg2,
                                          uintptr_t *out_ret) {
 #if defined(__aarch64__)
+  int rc = -1;
   int status = 0;
   struct user_pt_regs regs;
+  struct user_pt_regs orig_regs;
+  struct user_pt_regs ret_regs;
+  int has_orig = 0;
+  int has_ret = 0;
   (void)fn_name;
   if (!fn) {
     errno = EINVAL;
     return -1;
   }
   memset(&regs, 0, sizeof(regs));
-  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
-    return -1;
-  }
+  memset(&orig_regs, 0, sizeof(orig_regs));
+  memset(&ret_regs, 0, sizeof(ret_regs));
+  do {
+    if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
+      break;
+    }
+    memcpy(&orig_regs, &regs, sizeof(orig_regs));
+    has_orig = 1;
 
-  regs.sp = (regs.sp - 16) & (~0xFUL);
-  if (ptrace(PTRACE_POKEDATA, pid, (void *)regs.sp, (void *)0UL) < 0) {
-    return -1;
+    regs.sp = (regs.sp - 16) & (~0xFUL);
+    if (ptrace(PTRACE_POKEDATA, pid, (void *)regs.sp, (void *)0UL) < 0) {
+      break;
+    }
+    regs.regs[0] = arg1;
+    regs.regs[1] = arg2;
+    regs.regs[30] = 0; /* LR */
+    regs.pc = fn;
+    if (qpatch_arch_aarch64_setregs(pid, &regs) < 0) {
+      break;
+    }
+    if (ptrace(PTRACE_CONT, pid, NULL, NULL) < 0) {
+      break;
+    }
+    if (waitpid(pid, &status, 0) < 0) {
+      break;
+    }
+    if (qpatch_arch_aarch64_getregs(pid, &ret_regs) < 0) {
+      break;
+    }
+    has_ret = 1;
+    if (out_ret) {
+      *out_ret = ret_regs.regs[0];
+    }
+    if (iregs) {
+      memset(iregs, 0, sizeof(*iregs));
+    }
+    rc = 0;
+  } while (0);
+
+  if (has_orig) {
+    if (qpatch_arch_aarch64_setregs(pid, &orig_regs) < 0) {
+      if (rc == 0) {
+        rc = -1;
+      }
+    }
   }
-  regs.regs[0] = arg1;
-  regs.regs[1] = arg2;
-  regs.regs[30] = 0; /* LR */
-  regs.pc = fn;
-  if (qpatch_arch_aarch64_setregs(pid, &regs) < 0) {
-    return -1;
+  if (rc < 0 && has_ret && out_ret) {
+    *out_ret = ret_regs.regs[0];
   }
-  if (ptrace(PTRACE_CONT, pid, NULL, NULL) < 0) {
-    return -1;
-  }
-  if (waitpid(pid, &status, 0) < 0) {
-    return -1;
-  }
-  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
-    return -1;
-  }
-  if (out_ret) {
-    *out_ret = regs.regs[0];
-  }
-  if (iregs) {
-    memset(iregs, 0, sizeof(*iregs));
-  }
-  return 0;
+  return rc;
 #else
   (void)pid;
   (void)fn_name;
@@ -203,14 +277,14 @@ static int qpatch_arch_aarch64_run_syscall7(
 const struct qpatch_arch_ops *qpatch_arch_aarch64_get(void) {
   static const struct qpatch_arch_ops k_ops = {
       .cpu = QPATCH_ARCH_CPU_AARCH64,
-      .name = "aarch64(todo)",
+      .name = "aarch64",
       .elf_bit = ELF_IS_64BIT,
       .reg_ip_name = qpatch_arch_aarch64_reg_ip_name,
-      .reg_get_ip = qpatch_arch_aarch64_reg_get_zero,
-      .reg_set_ip = qpatch_arch_aarch64_reg_set_noop,
-      .reg_get_sp = qpatch_arch_aarch64_reg_get_zero,
-      .reg_set_sp = qpatch_arch_aarch64_reg_set_noop,
-      .reg_get_ret = qpatch_arch_aarch64_reg_get_zero,
+      .reg_get_ip = qpatch_arch_aarch64_reg_get_ip,
+      .reg_set_ip = qpatch_arch_aarch64_reg_set_ip,
+      .reg_get_sp = qpatch_arch_aarch64_reg_get_sp,
+      .reg_set_sp = qpatch_arch_aarch64_reg_set_sp,
+      .reg_get_ret = qpatch_arch_aarch64_reg_get_ret,
       .call_func = qpatch_arch_aarch64_call_func,
       .run_syscall6 = qpatch_arch_aarch64_run_syscall6,
       .run_syscall7 = qpatch_arch_aarch64_run_syscall7,
