@@ -104,45 +104,69 @@ static int qpatch_arch_aarch64_call_func(pid_t pid, const char *fn_name,
                                          uintptr_t arg1, uintptr_t arg2,
                                          uintptr_t *out_ret) {
 #if defined(__aarch64__)
+  int rc = -1;
   int status = 0;
   struct user_pt_regs regs;
+  struct user_pt_regs orig_regs;
+  struct user_pt_regs ret_regs;
+  int has_orig = 0;
+  int has_ret = 0;
   (void)fn_name;
   if (!fn) {
     errno = EINVAL;
     return -1;
   }
   memset(&regs, 0, sizeof(regs));
-  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
-    return -1;
-  }
+  memset(&orig_regs, 0, sizeof(orig_regs));
+  memset(&ret_regs, 0, sizeof(ret_regs));
+  do {
+    if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
+      break;
+    }
+    memcpy(&orig_regs, &regs, sizeof(orig_regs));
+    has_orig = 1;
 
-  regs.sp = (regs.sp - 16) & (~0xFUL);
-  if (ptrace(PTRACE_POKEDATA, pid, (void *)regs.sp, (void *)0UL) < 0) {
-    return -1;
+    regs.sp = (regs.sp - 16) & (~0xFUL);
+    if (ptrace(PTRACE_POKEDATA, pid, (void *)regs.sp, (void *)0UL) < 0) {
+      break;
+    }
+    regs.regs[0] = arg1;
+    regs.regs[1] = arg2;
+    regs.regs[30] = 0; /* LR */
+    regs.pc = fn;
+    if (qpatch_arch_aarch64_setregs(pid, &regs) < 0) {
+      break;
+    }
+    if (ptrace(PTRACE_CONT, pid, NULL, NULL) < 0) {
+      break;
+    }
+    if (waitpid(pid, &status, 0) < 0) {
+      break;
+    }
+    if (qpatch_arch_aarch64_getregs(pid, &ret_regs) < 0) {
+      break;
+    }
+    has_ret = 1;
+    if (out_ret) {
+      *out_ret = ret_regs.regs[0];
+    }
+    if (iregs) {
+      memset(iregs, 0, sizeof(*iregs));
+    }
+    rc = 0;
+  } while (0);
+
+  if (has_orig) {
+    if (qpatch_arch_aarch64_setregs(pid, &orig_regs) < 0) {
+      if (rc == 0) {
+        rc = -1;
+      }
+    }
   }
-  regs.regs[0] = arg1;
-  regs.regs[1] = arg2;
-  regs.regs[30] = 0; /* LR */
-  regs.pc = fn;
-  if (qpatch_arch_aarch64_setregs(pid, &regs) < 0) {
-    return -1;
+  if (rc < 0 && has_ret && out_ret) {
+    *out_ret = ret_regs.regs[0];
   }
-  if (ptrace(PTRACE_CONT, pid, NULL, NULL) < 0) {
-    return -1;
-  }
-  if (waitpid(pid, &status, 0) < 0) {
-    return -1;
-  }
-  if (qpatch_arch_aarch64_getregs(pid, &regs) < 0) {
-    return -1;
-  }
-  if (out_ret) {
-    *out_ret = regs.regs[0];
-  }
-  if (iregs) {
-    memset(iregs, 0, sizeof(*iregs));
-  }
-  return 0;
+  return rc;
 #else
   (void)pid;
   (void)fn_name;
