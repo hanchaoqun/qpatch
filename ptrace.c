@@ -81,6 +81,49 @@ static uintptr_t ptrace_arch_reg_get_sp(const struct qpatch_arch_ops *arch_ops,
 #endif
 }
 
+static int ptrace_arch_reg_set_sp(const struct qpatch_arch_ops *arch_ops,
+                                  struct user *regs, uintptr_t sp) {
+  if (arch_ops && arch_ops->reg_set_sp) {
+    arch_ops->reg_set_sp(regs, sp);
+    return 0;
+  }
+#if defined(__x86_64__)
+  if (regs) {
+    regs->regs.rsp = sp;
+    return 0;
+  }
+#elif defined(__i386__)
+  if (regs) {
+    regs->regs.esp = sp;
+    return 0;
+  }
+#else
+  (void)regs;
+  (void)sp;
+#endif
+  return -1;
+}
+
+static int ptrace_arch_memcpy2stack(pid_t pid,
+                                    const struct qpatch_arch_ops *arch_ops,
+                                    struct user *iregs, const void *mem,
+                                    size_t memsize, uintptr_t *out_addr) {
+  uintptr_t sp = 0;
+  if (!iregs || !mem || memsize == 0 || !out_addr) {
+    return -1;
+  }
+  sp = ptrace_arch_reg_get_sp(arch_ops, iregs);
+  sp = sp - (((memsize) / 8 + 1) * 8);
+  if (ptrace_arch_reg_set_sp(arch_ops, iregs, sp) < 0) {
+    return -1;
+  }
+  if (ptrace_pid_writearray(pid, sp, (unsigned char *)mem, memsize) < 0) {
+    return -1;
+  }
+  *out_addr = sp;
+  return 0;
+}
+
 int ptrace_traceme() {
   if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) < 0) {
     int err = errno;
@@ -1118,8 +1161,8 @@ int ptrace_pid_inject_libc(pid_t pid, int elang, const char *libcname,
     LOG(LOG_DEBUG, "Copy stack out ok.");
 
     // syscall open("xxx.so", O_RDONLY, 0)
-    PTRACE_ASM_MEMCPY2STACK(pid, iregs, libcname, strlen(libcname) + 1,
-                            inj_libcname, rc);
+    rc = ptrace_arch_memcpy2stack(pid, arch_ops, &iregs, libcname,
+                                  strlen(libcname) + 1, &inj_libcname);
     PTRACE_CHECK_RC_AND_BREAK(rc, "MEMCPY2STACK");
     rc = arch_ops->run_syscall6(pid, "P_SYS_openat", &iregs, P_SYS_openat,
                                 (int32_t)P_AT_FDCWD, inj_libcname, P_O_RDONLY,
