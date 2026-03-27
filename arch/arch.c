@@ -31,8 +31,3 @@ const struct qpatch_arch_ops *qpatch_arch_default(void) {
   return qpatch_arch_x86_64_get();
 #endif
 }
-  if (hp->is64 == ELF_IS_64BIT) {
-    return qpatch_arch_x86_64_get();
-  }
-  return NULL;
-}

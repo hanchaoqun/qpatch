@@ -87,7 +87,7 @@ static int qpatch_arch_aarch64_run_syscall7(
 
 const struct qpatch_arch_ops *qpatch_arch_aarch64_get(void) {
   static const struct qpatch_arch_ops k_ops = {
-      .cpu = QPATCH_ARCH_CPU_UNKNOWN,
+      .cpu = QPATCH_ARCH_CPU_AARCH64,
       .name = "aarch64(todo)",
       .elf_bit = ELF_IS_64BIT,
       .reg_ip_name = qpatch_arch_aarch64_reg_ip_name,

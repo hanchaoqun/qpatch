@@ -1160,6 +1160,10 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
     LOG(LOG_ERR, "No malloc/dlopen found.");
     return -1;
   }
+  if (!pp->arch_ops || !pp->arch_ops->call_func) {
+    LOG(LOG_ERR, "No architecture call handler found.");
+    return -1;
+  }
   /* calculate the size to allocate */
   dllsz = strlen(dll) + 1;
   symsz = callsymbol ? (strlen(callsymbol) + 1) : 0;
@@ -1220,16 +1224,13 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
     LOG(LOG_DEBUG, "Copy stack out ok.");
     /* Call malloc */
     LOG(LOG_DEBUG, "Start call function [malloc]...");
-    PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
-    PTRACE_CHECK_RC_AND_BREAK(rc, "SET_BREAKPOINT");
-    PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs, pp->hp->fn_malloc, tgtsz, 0,
-                              rc);
-    PTRACE_CHECK_RC_AND_BREAK(rc, "PASS_ARGS2FUNC");
-    PTRACE_ASM_SET_REGS(pp->hp->pid, "malloc", iregs, rc);
-    PTRACE_ASM_CALL_FUNC(pp->hp->pid, "malloc", iregs, rc);
-    PTRACE_CHECK_RC_AND_BREAK(rc, "CALL_FUNC [malloc]");
-    result = PTRACE_REG_AX(iregs);
-    heapptr = PTRACE_REG_AX(iregs); /* keep a copy of this pointer */
+    rc = pp->arch_ops->call_func(pp->hp->pid, "malloc", &iregs,
+                                 pp->hp->fn_malloc, tgtsz, 0, &result);
+    if (rc < 0) {
+      LOG(LOG_ERR, "CALL_FUNC [malloc] failed.");
+      break;
+    }
+    heapptr = result; /* keep a copy of this pointer */
     PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
     LOG(LOG_DEBUG, "End call function [malloc] result.");
     /* Copy data to the malloced area */
@@ -1245,15 +1246,13 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
     }
     /* Call dlopen */
     LOG(LOG_DEBUG, "Start call function [dlopen]...");
-    PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
-    PTRACE_CHECK_RC_AND_BREAK(rc, "SET_BREAKPOINT");
-    PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs, pp->hp->fn_dlopen, heapptr,
-                              (RTLD_NOW | RTLD_LOCAL), rc);
-    PTRACE_CHECK_RC_AND_BREAK(rc, "PASS_ARGS2FUNC");
-    PTRACE_ASM_SET_REGS(pp->hp->pid, "dlopen", iregs, rc);
-    PTRACE_ASM_CALL_FUNC(pp->hp->pid, "dlopen", iregs, rc);
-    PTRACE_CHECK_RC_AND_BREAK(rc, "CALL_FUNC [dlopen]");
-    result = PTRACE_REG_AX(iregs);
+    rc = pp->arch_ops->call_func(pp->hp->pid, "dlopen", &iregs,
+                                 pp->hp->fn_dlopen, heapptr,
+                                 (RTLD_NOW | RTLD_LOCAL), &result);
+    if (rc < 0) {
+      LOG(LOG_ERR, "CALL_FUNC [dlopen] failed.");
+      break;
+    }
     PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
     LOG(LOG_DEBUG, "End call function [dlopen].");
     LOG(LOG_DEBUG, "Dll opened at %p", result);
@@ -1275,36 +1274,32 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
         }
       }
       LOG(LOG_DEBUG, "Start call function [dlsym]...");
-      PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
-      PTRACE_CHECK_RC_AND_BREAK(rc, "SET_BREAKPOINT");
-      PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs, pp->hp->fn_dlsym,
-                                *outdlladdr, (heapptr + dllsz), rc);
-      PTRACE_CHECK_RC_AND_BREAK(rc, "PASS_ARGS2FUNC");
-      PTRACE_ASM_SET_REGS(pp->hp->pid, "dlsym", iregs, rc);
-      PTRACE_ASM_CALL_FUNC(pp->hp->pid, "dlsym", iregs, rc);
-      PTRACE_CHECK_RC_AND_BREAK(rc, "CALL_FUNC [dlsym]");
-      result = PTRACE_REG_AX(iregs);
+      rc = pp->arch_ops->call_func(pp->hp->pid, "dlsym", &iregs,
+                                   pp->hp->fn_dlsym, *outdlladdr,
+                                   (heapptr + dllsz), &result);
+      if (rc < 0) {
+        LOG(LOG_ERR, "CALL_FUNC [dlsym] failed.");
+        break;
+      }
       PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
       LOG(LOG_DEBUG, "Start call function [dlsym].");
       LOG(LOG_DEBUG, "Symbol %s found at %p", callsymbol, result);
       if (result != 0) {
         LOG(LOG_DEBUG, "Start call function [%s]...", callsymbol);
-        PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
-        PTRACE_CHECK_RC_AND_BREAK(rc, "SET_BREAKPOINT");
         if (datasz > 0) {
-          PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs,
-                                    result /* value from dlsym */,
-                                    (heapptr + dllsz + symsz), datasz, rc);
-          PTRACE_CHECK_RC_AND_BREAK(rc, "PASS_ARGS2FUNC");
+          rc = pp->arch_ops->call_func(pp->hp->pid, callsymbol, &iregs,
+                                       result /* value from dlsym */,
+                                       (heapptr + dllsz + symsz), datasz,
+                                       &result);
         } else {
-          PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs,
-                                    result /* value from dlsym */, 0, 0, rc);
-          PTRACE_CHECK_RC_AND_BREAK(rc, "PASS_ARGS2FUNC");
+          rc = pp->arch_ops->call_func(pp->hp->pid, callsymbol, &iregs,
+                                       result /* value from dlsym */, 0, 0,
+                                       &result);
         }
-        PTRACE_ASM_SET_REGS(pp->hp->pid, callsymbol, iregs, rc);
-        PTRACE_ASM_CALL_FUNC(pp->hp->pid, callsymbol, iregs, rc);
-        PTRACE_CHECK_RC_AND_BREAK(rc, "CALL_FUNC [in dll]");
-        result = PTRACE_REG_AX(iregs);
+        if (rc < 0) {
+          LOG(LOG_ERR, "CALL_FUNC [in dll] failed.");
+          break;
+        }
         PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
         LOG(LOG_DEBUG, "End call function [%s].", callsymbol);
         LOG(LOG_DEBUG, "Return value from call %s(): %p", callsymbol,
@@ -1334,14 +1329,12 @@ int ptrace_pp_inject_library(struct ptrace_pid *pp, const char *dll,
       LOG(LOG_DEBUG, "free heapptr_need_free<%p>...", heapptr_need_free);
       /* Call free */
       LOG(LOG_DEBUG, "Start call function [free]...");
-      PTRACE_ASM_SET_BREAKPOINT(pp->hp->pid, iregs, rc);
-      PTRACE_CHECK_RC_AND_BREAK(rc, "SET_BREAKPOINT");
-      PTRACE_ASM_PASS_ARGS2FUNC(pp->hp->pid, iregs, pp->hp->fn_free,
-                                heapptr_need_free, 0, rc);
-      PTRACE_CHECK_RC_AND_BREAK(rc, "PASS_ARGS2FUNC");
-      PTRACE_ASM_SET_REGS(pp->hp->pid, "free", iregs, rc);
-      PTRACE_ASM_CALL_FUNC(pp->hp->pid, "free", iregs, rc);
-      PTRACE_CHECK_RC_AND_BREAK(rc, "CALL_FUNC [free]");
+      rc = pp->arch_ops->call_func(pp->hp->pid, "free", &iregs, pp->hp->fn_free,
+                                   heapptr_need_free, 0, NULL);
+      if (rc < 0) {
+        LOG(LOG_ERR, "CALL_FUNC [free] failed.");
+        break;
+      }
       PTRACE_ASM_RECOVER_REGS(pp->hp->pid, iregs, oregs, rc);
       LOG(LOG_DEBUG, "End call function [free].");
       heapptr_need_free = 0;
