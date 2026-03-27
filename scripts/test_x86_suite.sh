@@ -8,6 +8,7 @@ cd "$ROOT_DIR"
 ./scripts/test_x86_qpatch_replace.sh
 ./scripts/test_x86_qpatch_smallfunc_guard.sh
 ./scripts/test_x86_qpatch_stress.sh
+./scripts/test_x86_qpatch_tmpdll_failures.sh
 ./scripts/test_x86_gotrace_smoke.sh
 
 echo "[PASS] x86 suite completed"

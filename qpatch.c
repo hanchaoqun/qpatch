@@ -1470,10 +1470,93 @@ void usage_exit(char *binname) {
   exit(-1);
 }
 
-#define CMD_BUFFERSIZE 4096
 #define PATH_BUFFERSIZE 1024
 #define FILENAME_BUFFERSIZE 512
 extern UINT32 g_ucurLogLevel;
+
+static int qpatch_remove_file_if_exists(const char *path) {
+  if (unlink(path) == 0) {
+    return 0;
+  }
+  if (errno == ENOENT) {
+    return 0;
+  }
+  LOG(LOG_ERR, "Failed to unlink %s, errno=%d(%s).", path, errno,
+      strerror(errno));
+  return -1;
+}
+
+static int qpatch_copy_file(const char *src, const char *dst) {
+  int srcfd = -1;
+  int dstfd = -1;
+  int rc = -1;
+  char buf[8192];
+
+  srcfd = open(src, O_RDONLY);
+  if (srcfd < 0) {
+    LOG(LOG_ERR, "Failed to open source file %s, errno=%d(%s).", src, errno,
+        strerror(errno));
+    return -1;
+  }
+
+  dstfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0700);
+  if (dstfd < 0) {
+    LOG(LOG_ERR, "Failed to open destination file %s, errno=%d(%s).", dst,
+        errno, strerror(errno));
+    goto out;
+  }
+
+  while (1) {
+    ssize_t rlen = read(srcfd, buf, sizeof(buf));
+    if (rlen == 0) {
+      break;
+    }
+    if (rlen < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      LOG(LOG_ERR, "Failed to read source file %s, errno=%d(%s).", src, errno,
+          strerror(errno));
+      goto out;
+    }
+
+    ssize_t off = 0;
+    while (off < rlen) {
+      ssize_t wlen = write(dstfd, buf + off, rlen - off);
+      if (wlen < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        LOG(LOG_ERR, "Failed to write destination file %s, errno=%d(%s).",
+            dst, errno, strerror(errno));
+        goto out;
+      }
+      off += wlen;
+    }
+  }
+
+  if (fsync(dstfd) < 0) {
+    LOG(LOG_ERR, "Failed to fsync destination file %s, errno=%d(%s).", dst,
+        errno, strerror(errno));
+    goto out;
+  }
+
+  rc = 0;
+
+out:
+  if (srcfd >= 0) {
+    close(srcfd);
+  }
+  if (dstfd >= 0) {
+    close(dstfd);
+  }
+  if (rc < 0 && qpatch_remove_file_if_exists(dst) < 0) {
+    LOG(LOG_ERR, "Cleanup failed for destination file %s after copy error.",
+        dst);
+  }
+  return rc;
+}
+
 int main(int argc, char *argv[]) {
   int rc = -1;
   int ch = 0;
@@ -1552,41 +1635,49 @@ int main(int argc, char *argv[]) {
     symelang = ELF_E_LANG_GO;
   }
 
-  char cmd[CMD_BUFFERSIZE] = {0};
-
   char dllpath[FILENAME_BUFFERSIZE] = {0};
   char dllfullname[PATH_BUFFERSIZE] = {0};
   char tmpdllfullname[PATH_BUFFERSIZE] = {0};
   char pat_symbol_file[PATH_BUFFERSIZE] = {0};
+  int tmpdll_created = 0;
 
   char *dllname = "qpatch.so";
   char *tmpdllname = "_qpatch.so";
 
   getcwd(dllpath, FILENAME_BUFFERSIZE);
   dllpath[FILENAME_BUFFERSIZE - 1] = '\0';
-  sprintf(tmpdllfullname, "%s/%s", dllpath, tmpdllname);
+  snprintf(tmpdllfullname, sizeof(tmpdllfullname), "%s/%s", dllpath,
+           tmpdllname);
 
   if (dllnamepa != NULL && strlen(dllnamepa) > 0) {
-    sprintf(dllfullname, "%s", dllnamepa);
+    snprintf(dllfullname, sizeof(dllfullname), "%s", dllnamepa);
   } else {
-    sprintf(dllfullname, "%s/%s", dllpath, dllname);
+    snprintf(dllfullname, sizeof(dllfullname), "%s/%s", dllpath, dllname);
   }
 
   memset(pat_symbol_file, 0, PATH_BUFFERSIZE);
   if ((pat_symbol != NULL) && (strlen(pat_symbol) > 0)) {
-    sprintf(pat_symbol_file, "%s/%s", dllpath, pat_symbol);
+    snprintf(pat_symbol_file, sizeof(pat_symbol_file), "%s/%s", dllpath,
+             pat_symbol);
   }
-  memset(cmd, 0, CMD_BUFFERSIZE);
-  sprintf(cmd, "rm %s >/dev/null 2>&1", tmpdllfullname);
-  system(cmd);
+  if (qpatch_remove_file_if_exists(tmpdllfullname) < 0) {
+    LOG(LOG_ERR, "Failed to prepare temp patch file %s.", tmpdllfullname);
+    return EXIT_FAILURE;
+  }
 
-  memset(cmd, 0, CMD_BUFFERSIZE);
-  sprintf(cmd, "cp %s %s", dllfullname, tmpdllfullname);
-  system(cmd);
+  if (qpatch_copy_file(dllfullname, tmpdllfullname) < 0) {
+    LOG(LOG_ERR, "Failed to copy patch library %s to %s.", dllfullname,
+        tmpdllfullname);
+    return EXIT_FAILURE;
+  }
+  tmpdll_created = 1;
 
-  memset(cmd, 0, CMD_BUFFERSIZE);
-  sprintf(cmd, "chmod 755 %s", tmpdllfullname);
-  system(cmd);
+  if (chmod(tmpdllfullname, 0755) < 0) {
+    LOG(LOG_ERR, "Failed to chmod temp patch file %s, errno=%d(%s).",
+        tmpdllfullname, errno, strerror(errno));
+    qpatch_remove_file_if_exists(tmpdllfullname);
+    return EXIT_FAILURE;
+  }
 
   if (action == 0) {
     rc = qpatch_lod_patch((pid_t)pid, objname, tmpdllfullname, symelang,
@@ -1599,13 +1690,15 @@ int main(int argc, char *argv[]) {
     rc = qpatch_dsp_patch((pid_t)pid, objname, tmpdllfullname, symelang);
   }
 
-  memset(cmd, 0, CMD_BUFFERSIZE);
-  sprintf(cmd, "rm %s", tmpdllfullname);
-  system(cmd);
-
-  if (rc < 0) {
-    exit(-1);
+  if (tmpdll_created && qpatch_remove_file_if_exists(tmpdllfullname) < 0) {
+    LOG(LOG_ERR, "Failed to remove temp patch file %s after patch action.",
+        tmpdllfullname);
+    rc = -1;
   }
 
-  return 0;
+  if (rc < 0) {
+    return EXIT_FAILURE;
+  }
+
+  return EXIT_SUCCESS;
 }
